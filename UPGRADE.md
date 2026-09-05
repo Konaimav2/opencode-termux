@@ -205,8 +205,47 @@ All headless tests passed on 2026-09-05 (production 1.17.9 untouched):
 | `gpt-5.6-terra` text request | pass |
 | `gpt-5.6-terra` + tool continuation (the hang signature) | pass |
 | vision: 2.1 MB ADB screenshot → `@` attach → analysis | pass |
-| giant session resume (31.6 MiB, 3353 parts, 811K tokens, 808K cached) | **pass in ~68 s, model replied correctly** (was: infinite hang on 1.17.9) |
-| TUI interactive (prompt, permissions, model switch) | **not tested — please verify** |
+| giant session resume (31.6 MiB, 3353 parts, 811K tokens, 808K cached) | **pass — loop completes, model replied correctly** (was: infinite hang on 1.17.9). Note: 1–3 attempts via retry machinery, ~1–8 min; see hang-analysis below |
+| TUI interactive boot + render | **pass on rc4** (logo, prompt, model selector, version; verified via pty capture). Interactive prompt/permission flow | **not tested — please verify** |
+
+### Hang root-cause analysis (evidence from this investigation)
+
+Verdict: **H — interaction of several causes** (no single bug):
+
+- **F. Inline image history (high confidence).** `toModelMessages` is
+  byte-identical in 1.17.9 and 1.18.27: every historical user-attached
+  image is re-emitted with its full `data:` URL on *every* turn, with no
+  pruning until compaction truncates history. Verified 40 images /
+  25.87 MiB in `ses_fa531f5c8ffeW0F9zxs4jWnS2E`.
+- **G. Session resume/history processing (high).** Resume/fork/raw-glob of
+  the old session reproduces; fresh sessions work. Cost is full-history
+  conversion per turn.
+- **A. OpenCode 1.17.9 (high, contributory).** No chunk/header timeouts
+  (fixes `4eb29a64f`/`b04697366` exist only in ≥1.18.26, verified via
+  `git tag --contains`) and a heavier compaction path
+  (`structuredClone` + 2× `toModelMessages(stripMedia)` over the full
+  media head vs 1.18.27's O(text) `serialize()`). A stall that 1.18.27
+  bounds and retries through becomes infinite on 1.17.9.
+- **B. Newer OpenCode fixes the infinite hang (medium-high).** 3/3 giant
+  loop completions, working retries (`stream error` → retry → success
+  observed in logs), graded ladder 1–25 MiB all pass with flat RSS
+  (555–641 MB). NOT a complete fix: on 31 MB sessions the headless
+  process sometimes lingers after loop exit (idle threads, no log) and
+  responses are occasionally empty — narrower, still open.
+- **D. JSC GC/memory (medium).** 870 MB peak RSS on giant runs (both
+  versions); HeapHelper/Collector threads observed; RSS declines after
+  peak (GC working, not leaking). Amplifier, not sole cause.
+- **C. Android Bun (medium).** Measured: Bun standalone starts with
+  **zero** `process.env` keys (breaks all env-gated behavior, incl. in
+  1.17.x); host Bun 1.3.2 bundler needed 4 workarounds (Undici namespace,
+  worker-asset eager init, chunk splitter, tree-sitter embedding).
+  Runtime scheduling under NDK/JSC remains a suspect for the exact stall
+  point, unproven.
+- **E. AI SDK serialization (medium).** 31 MB payloads serialize + upload
+  per attempt (68 s–8 min observed); retries multiply cost; one
+  `AI_APICallError: <none>` + empty responses suggest provider-side
+  strain on huge payloads too.
+- **OpenTUI: no evidence.** Hangs reproduce headless; TUI renders fine.
 
 ## 6. Building newer versions yourself
 
