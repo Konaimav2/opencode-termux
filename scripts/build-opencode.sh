@@ -138,15 +138,33 @@ for pkg_dir in "${OPENTUI_PACKAGES[@]}"; do
     # condition, which does `await import("./libopentui.so", { with: { type:
     # "file" } })`). Bun's /$bunfs/root/ virtual path works on desktop Linux
     # but is not intercepted by the Android runtime, so the dlopen/openat
-    # fails with ENOENT. Both entries are replaced with a loader that falls
-    # back to a real Termux filesystem path via OPENTUI_LIB_PATH.
+    # fails with ENOENT. Bun standalone on Android starts with an EMPTY
+    # process.env, so the path is hard-coded to the Termux lib dir (the
+    # packaging step installs libopentui.so there). Both entries are
+    # replaced with a CommonJS-compatible loader that resolves the real
+    # filesystem path without touching the environment.
     for idx_name in index.js index.bun.js; do
         idx_file="$pkg_dir/$idx_name"
         if [ -f "$idx_file" ]; then
             idx_backup="${idx_file}.bak"
             cp "$idx_file" "$idx_backup"
             cat > "$idx_file" <<'IDXEOF'
-module.exports = process.env["OPENTUI_LIB_PATH"] || "/data/data/com.termux/files/usr/lib/libopentui.so";
+// OPENCODE_BUNDLER_SHIM: resolve libopentui.so from the real filesystem.
+// Bun's /$bunfs/root/ virtual paths are not intercepted on Android, and
+// Bun standalone on Android starts with an EMPTY process.env, so we cannot
+// use OPENTUI_LIB_PATH. Resolution order: libopentui.so next to the
+// running executable (side-by-side/flat layout), then the Termux lib dir
+// (packaged layout).
+const fs = require("fs");
+const path = require("path");
+function androidLibPath() {
+  try {
+    const next = path.join(path.dirname(process.execPath), "libopentui.so");
+    if (fs.existsSync(next)) return next;
+  } catch (e) {}
+  return "/data/data/com.termux/files/usr/lib/libopentui.so";
+}
+module.exports = androidLibPath();
 IDXEOF
             OPENTUI_BACKUPS+=("$idx_file:$idx_backup")
             echo "    Patched $idx_file"
@@ -172,7 +190,16 @@ if [ ! -d "$CORE_LINUX_ARM64_DIR" ]; then
 EOF
     cp "$ARM64_LIBOPENTUI" "$CORE_LINUX_ARM64_DIR/libopentui.so"
     cat > "$CORE_LINUX_ARM64_DIR/index.js" <<'EOF'
-module.exports = process.env["OPENTUI_LIB_PATH"] || "/data/data/com.termux/files/usr/lib/libopentui.so";
+const fs = require("fs");
+const path = require("path");
+function androidLibPath() {
+  try {
+    const next = path.join(path.dirname(process.execPath), "libopentui.so");
+    if (fs.existsSync(next)) return next;
+  } catch (e) {}
+  return "/data/data/com.termux/files/usr/lib/libopentui.so";
+}
+module.exports = androidLibPath();
 EOF
     echo "    Created $CORE_LINUX_ARM64_DIR"
 else
@@ -197,10 +224,12 @@ fi
 # "integer does not fit in destination type" for u32 arguments.
 # Since @opentui/core 0.4.5 the generated JS lives in chunk-bun-*.js /
 # chunk-node-*.js files (no more index-*.js), and existsSync became
-# existsSync3 after bundling.
+# existsSync3 after bundling. Bun standalone on Android has an EMPTY
+# process.env, so instead of an OPENTUI_LIB_PATH override we prepend an
+# execPath-relative resolution to the targetLibPath computation.
 echo ">>> Patching @opentui/core FFI u32 boundary..."
 while IFS= read -r -d '' opentui_js; do
-    if grep -q "function toU32(value)" "$opentui_js" && grep -q 'process.env\["OPENTUI_LIB_PATH"\]' "$opentui_js"; then
+    if grep -q "function toU32(value)" "$opentui_js" && grep -q "opencodeExecDir" "$opentui_js"; then
         echo "    $opentui_js already patched"
         continue
     fi
@@ -212,9 +241,11 @@ path = Path(sys.argv[1])
 text = path.read_text()
 changes = []
 
-# 1. OPENTUI_LIB_PATH override for the native library location.
-#    0.4.5: existsSync3 (was existsSync2 in 0.4.x). Handle both.
-if 'process.env["OPENTUI_LIB_PATH"]' not in text and "targetLibPath" in text:
+# 1. Native library location: Bun standalone on Android has an EMPTY
+#    process.env, so resolve libopentui.so next to the running executable
+#    before the default resolution (which imports the synthesized
+#    @opentui/core-linux-arm64 package — itself shimmed the same way).
+if "opencodeExecDir" not in text and "targetLibPath" in text:
     done = False
     for exists_fn in ("existsSync3", "existsSync2", "existsSync"):
         old = (
@@ -227,14 +258,19 @@ if 'process.env["OPENTUI_LIB_PATH"]' not in text and "targetLibPath" in text:
             'if (isBunfsPath(targetLibPath)) {\n'
             '    targetLibPath = targetLibPath.replace("../", "");\n'
             '  }\n'
-            '  if (process.env["OPENTUI_LIB_PATH"]) {\n'
-            '    targetLibPath = process.env["OPENTUI_LIB_PATH"];\n'
+            '  {\n'
+            '    const execp = process.execPath || "";\n'
+            '    const slash = execp.lastIndexOf("/");\n'
+            '    const execDirLib = (slash > 0 ? execp.slice(0, slash) : ".") + "/libopentui.so";\n'
+            f'    if ({exists_fn}(execDirLib)) {{\n'
+            '      targetLibPath = execDirLib;\n'
+            '    }\n'
             '  }\n'
             f'  if (!{exists_fn}(targetLibPath)) {{'
         )
         if old in text:
             text = text.replace(old, new, 1)
-            changes.append(f"lib-path@{exists_fn}")
+            changes.append(f"execdir-libpath@{exists_fn}")
             done = True
             break
     if not done:
@@ -247,10 +283,10 @@ if 'process.env["OPENTUI_LIB_PATH"]' not in text and "targetLibPath" in text:
         if m:
             text = text.replace(
                 m.group(2),
-                '  if (process.env["OPENTUI_LIB_PATH"]) {\n    targetLibPath = process.env["OPENTUI_LIB_PATH"];\n  }\n' + m.group(2),
+                '  {\n    const execp = process.execPath || "";\n    const slash = execp.lastIndexOf("/");\n    const execDirLib = (slash > 0 ? execp.slice(0, slash) : ".") + "/libopentui.so";\n    if (existsSync(execDirLib)) {\n      targetLibPath = execDirLib;\n    }\n  }\n' + m.group(2),
                 1,
             )
-            changes.append("lib-path@fallback")
+            changes.append("execdir-libpath@fallback")
         else:
             print(f"    WARNING: {path.name}: targetLibPath block found but no insertion point")
 
@@ -354,6 +390,9 @@ done
 #    "Xyz is not defined" (hit by @effect/platform-node/dist/Undici.js since
 #    OpenCode 1.18.x bundles effect 4.0.0-beta.83). Regenerate the shim with
 #    explicit named re-exports enumerated from the host runtime instead.
+#    NOTE: write via temp+mv (never truncate in place) — Bun hardlinks
+#    identical files within node_modules, and truncating would corrupt the
+#    other link(s).
 UNDICI_SHIMS="$OPENCODE_SRC/node_modules/.bun"/@effect+platform-node@*/node_modules/@effect/platform-node/dist/Undici.js
 for undici_js in $UNDICI_SHIMS; do
     if [ -f "$undici_js" ]; then
@@ -362,6 +401,7 @@ for undici_js in $UNDICI_SHIMS; do
             continue
         fi
         UNDICI_NAMES=$("$HOST_BUN" -e 'const u=require("undici");console.log(Object.keys(u).filter(k=>/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k)).join(" "))')
+        UNDICI_TMP="${undici_js}.android-tmp"
         {
             echo "// OPENCODE_BUNDLER_SHIM: regenerated by opencode-termux build."
             echo "// Bun 1.3.2 miscompiles 'export * from \"undici\"' (a Bun built-in)"
@@ -374,7 +414,8 @@ for undici_js in $UNDICI_SHIMS; do
                 fi
             done
             echo "export default UndiciDefault;"
-        } > "$undici_js"
+        } > "$UNDICI_TMP"
+        mv -f "$UNDICI_TMP" "$undici_js"
         echo "    Regenerated $undici_js with explicit named exports"
     fi
 done
@@ -441,7 +482,16 @@ if [ -f "$ANDROID_DEBUG_BUN" ]; then
             debug_idx_backup="${idx_file}.debug-bak"
             cp "$idx_file" "$debug_idx_backup"
             cat > "$idx_file" <<'IDXEOF'
-module.exports = process.env["OPENTUI_LIB_PATH"] || "/data/data/com.termux/files/usr/lib/libopentui.so";
+const fs = require("fs");
+const path = require("path");
+function androidLibPath() {
+  try {
+    const next = path.join(path.dirname(process.execPath), "libopentui.so");
+    if (fs.existsSync(next)) return next;
+  } catch (e) {}
+  return "/data/data/com.termux/files/usr/lib/libopentui.so";
+}
+module.exports = androidLibPath();
 IDXEOF
             DEBUG_OPENTUI_BACKUPS+=("$idx_file:$debug_idx_backup")
         fi
