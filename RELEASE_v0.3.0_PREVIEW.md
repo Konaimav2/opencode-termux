@@ -30,6 +30,18 @@ network-stall family.
 ## What changed in the port
 
 - OpenCode bumped to **1.18.27**; OpenTUI bumped **0.4.2 → 0.4.5**
+- **Bun standalone on Android starts with an EMPTY `process.env`** (measured:
+  0 keys; `os.homedir()` still works via bionic). Every env-gated patch
+  silently never fired — including in the old 1.17.x builds. All Android
+  behavior is now env-free:
+  - `global.ts`: production layout from `os.homedir()` (`~/.local/share`,
+    `~/.config`, `~/.local/state`, `~/.cache`, `tmp` nested under cache);
+    `opencode-next` executables auto-detect and use `~/.opencode-next/*`
+    (XDG_* variables cannot work and are ignored)
+  - watcher/config/audio/spawn guards are unconditional (graph is
+    Android-only)
+  - `libopentui.so` resolves next to the running executable, then the
+    Termux lib dir (no `OPENTUI_LIB_PATH`; it is unreadable on device)
 - OpenCode source patches moved from inline perl to a real patch file:
   `patches/opencode/android-termux-1.18.patch`
   - Termux-safe cache/tmp paths (`packages/core/src/global.ts`)
