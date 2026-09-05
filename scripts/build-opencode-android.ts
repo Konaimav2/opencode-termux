@@ -57,16 +57,20 @@ JSON.parse(modelsData)
 console.log("Loaded models.dev snapshot")
 
 console.log("\n=== Step 2: Resolving OpenTUI workers ===")
-const localPath = path.resolve(OPENCODE_DIR, "node_modules/@opentui/core/parser.worker.js")
-const rootPath = path.resolve(OPENCODE_DIR, "../../node_modules/@opentui/core/parser.worker.js")
-let parserWorkerResolved: string
+// Mirror upstream build.ts: embed the @opentui/core parser worker content
+// under a fixed name and expose it via OTUI_TREE_SITTER_WORKER_PATH. The
+// worker path resolves inside bunfs as /$bunfs/root/<name> at runtime.
+let treeSitterWorker: string
 try {
-  parserWorkerResolved = fs.realpathSync(fs.existsSync(localPath) ? localPath : rootPath)
+  treeSitterWorker = await Bun.file(require.resolve("@opentui/core/parser.worker")).text()
 } catch {
-  parserWorkerResolved = require.resolve("@opentui/core/parser.worker.js")
+  const localPath = path.resolve(OPENCODE_DIR, "node_modules/@opentui/core/parser.worker.js")
+  const rootPath = path.resolve(OPENCODE_DIR, "../../node_modules/@opentui/core/parser.worker.js")
+  treeSitterWorker = await Bun.file(fs.existsSync(localPath) ? localPath : rootPath).text()
 }
+const treeSitterWorkerPath = "opentui-tree-sitter-worker.js"
 const workerPath = "./src/cli/tui/worker.ts"
-console.log(`Parser worker: ${parserWorkerResolved}`)
+console.log(`Tree-sitter worker: embedded as ${treeSitterWorkerPath} (${treeSitterWorker.length} bytes)`)
 console.log(`OpenCode worker: ${workerPath}`)
 
 await $`rm -rf ${OUTPUT_DIR}`
@@ -76,7 +80,6 @@ console.log("\n=== Step 3: Bundling OpenCode ===")
 const hostBinaryPath = path.join(OUTPUT_DIR, "opencode-host")
 const plugin = createSolidTransformPlugin()
 const bunfsRoot = "/$bunfs/root/"
-const workerRelativePath = path.relative(OPENCODE_DIR, parserWorkerResolved).replaceAll("\\", "/")
 
 const result = await Bun.build({
   conditions: ["bun", "node"],
@@ -86,7 +89,11 @@ const result = await Bun.build({
   format: "esm",
   minify: true,
   sourcemap: "none",
-  splitting: true,
+  // NOTE: splitting must stay disabled with host Bun 1.3.2 — its chunker can
+  // emit colliding chunk names with the 1.18.x dependency tree
+  // ("Multiple files share the same output path" for openai's resources).
+  // Without splitting, shared code between entrypoints is inlined instead.
+  splitting: false,
   compile: {
     autoloadBunfig: false,
     autoloadDotenv: false,
@@ -95,12 +102,15 @@ const result = await Bun.build({
     outfile: hostBinaryPath,
     execArgv: [`--user-agent=opencode/${VERSION}`, "--use-system-ca", "--"],
   },
-  entrypoints: ["./src/index.ts", parserWorkerResolved, workerPath],
+  files: {
+    [treeSitterWorkerPath]: treeSitterWorker,
+  },
+  entrypoints: ["./src/index.ts", workerPath],
   define: {
     FFF_LIBC: `"gnu"`,
     OPENCODE_VERSION: `'${VERSION}'`,
     OPENCODE_MODELS_DEV: modelsData,
-    OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + workerRelativePath,
+    OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + treeSitterWorkerPath,
     OPENCODE_WORKER_PATH: workerPath,
     OPENCODE_CHANNEL: `'${CHANNEL}'`,
     OPENCODE_LIBC: `"glibc"`,
@@ -159,7 +169,11 @@ while (true) {
   searchPos = pos + undiciSearch.length
 }
 if (undiciPatchCount === 0) {
-  console.warn("WARNING: undici global patch pattern not found; continuing")
+  console.log(
+    "NOTE: undici global re-export pattern not found in this module graph. " +
+      "Since OpenCode 1.18.x the bundler emits `import from \"undici\"` which resolves " +
+      "via Bun's built-in undici module, so the Android patch is not needed.",
+  )
 } else {
   console.log(`Patched ${undiciPatchCount} undici occurrence(s)`)
 }

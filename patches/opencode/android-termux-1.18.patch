@@ -1,0 +1,158 @@
+diff --git a/packages/core/src/cross-spawn-spawner.ts b/packages/core/src/cross-spawn-spawner.ts
+index 6ea9022ac..7bb9679ec 100644
+--- a/packages/core/src/cross-spawn-spawner.ts
++++ b/packages/core/src/cross-spawn-spawner.ts
+@@ -305,6 +305,11 @@ export const make = Effect.gen(function* () {
+ 
+     return Effect.try({
+       try: () => {
++        if (process.env.TERMUX_VERSION || process.env.ANDROID_ROOT || process.env.PREFIX?.includes("com.termux")) {
++          // Negative-pid (process group) kill panics in Bun on Android.
++          proc.kill(signal)
++          return
++        }
+         globalThis.process.kill(-proc.pid!, signal)
+       },
+       catch: (err) => toPlatformError("kill", toError(err), command),
+@@ -375,7 +380,7 @@ export const make = Effect.gen(function* () {
+               cwd: dir,
+               env: env(command.options),
+               stdio: stdios(sin, sout, serr, extra),
+-              detached: command.options.detached ?? process.platform !== "win32",
++              detached: (process.env.TERMUX_VERSION || process.env.ANDROID_ROOT || process.env.PREFIX?.includes("com.termux")) ? false : (command.options.detached ?? process.platform !== "win32"),
+               shell: command.options.shell,
+               windowsHide: process.platform === "win32",
+             }),
+diff --git a/packages/core/src/filesystem/watcher.ts b/packages/core/src/filesystem/watcher.ts
+index c5e206319..f7d5e3a13 100644
+--- a/packages/core/src/filesystem/watcher.ts
++++ b/packages/core/src/filesystem/watcher.ts
+@@ -24,6 +24,11 @@ const SUBSCRIBE_TIMEOUT_MS = 10_000
+ export const Event = FileSystemWatcher.Event
+ 
+ const watcher = lazy((): typeof import("@parcel/watcher") | undefined => {
++  if (process.env.TERMUX_VERSION || process.env.ANDROID_ROOT || process.env.PREFIX?.includes("com.termux")) {
++    // The @parcel/watcher native binding is not available for Android; fall
++    // back to no file watching instead of crashing on a missing .node module.
++    return undefined
++  }
+   try {
+     const libc = typeof OPENCODE_LIBC === "undefined" ? undefined : OPENCODE_LIBC
+     const binding = require(
+diff --git a/packages/core/src/global.ts b/packages/core/src/global.ts
+index a192a4b46..7f854bb1c 100644
+--- a/packages/core/src/global.ts
++++ b/packages/core/src/global.ts
+@@ -8,11 +8,16 @@ import { Flag } from "./flag/flag"
+ import { makeGlobalNode } from "./effect/app-node"
+ 
+ const app = "opencode"
++const isAndroid =
++  Boolean(process.env.TERMUX_VERSION) ||
++  Boolean(process.env.ANDROID_ROOT) ||
++  Boolean(process.env.PREFIX?.includes("com.termux"))
++const androidHome = process.env.OPENCODE_TEST_HOME ?? os.homedir()
+ const data = path.join(xdgData!, app)
+-const cache = path.join(xdgCache!, app)
++const cache = path.join(isAndroid ? path.join(androidHome, ".cache") : xdgCache!, app)
+ const config = path.join(xdgConfig!, app)
+ const state = path.join(xdgState!, app)
+-const tmp = path.join(os.tmpdir(), app)
++const tmp = path.join(isAndroid ? path.join(cache, "tmp") : os.tmpdir(), app)
+ 
+ const paths = {
+   get home() {
+diff --git a/packages/core/src/shell.ts b/packages/core/src/shell.ts
+index 29089106d..d61324658 100644
+--- a/packages/core/src/shell.ts
++++ b/packages/core/src/shell.ts
+@@ -44,6 +44,13 @@ export async function killTree(proc: ChildProcess, opts?: { exited?: () => boole
+     return
+   }
+ 
++  if (process.env.TERMUX_VERSION || process.env.ANDROID_ROOT || process.env.PREFIX?.includes("com.termux")) {
++    proc.kill("SIGTERM")
++    await sleep(SIGKILL_TIMEOUT_MS)
++    if (!opts?.exited?.()) proc.kill("SIGKILL")
++    return
++  }
++
+   try {
+     process.kill(-pid, "SIGTERM")
+     await sleep(SIGKILL_TIMEOUT_MS)
+diff --git a/packages/opencode/src/config/config.ts b/packages/opencode/src/config/config.ts
+index 9e10b67fe..27fee627d 100644
+--- a/packages/opencode/src/config/config.ts
++++ b/packages/opencode/src/config/config.ts
+@@ -449,6 +449,7 @@ const layer = Layer.effect(
+ 
+           yield* ensureGitignore(dir).pipe(Effect.orDie)
+ 
++          if (!(process.env.TERMUX_VERSION || process.env.ANDROID_ROOT || process.env.PREFIX?.includes("com.termux"))) {
+           const dep = yield* npmSvc
+             .install(dir, {
+               add: [
+@@ -469,6 +470,7 @@ const layer = Layer.effect(
+               Effect.forkDetach,
+             )
+           deps.push(dep)
++          }
+ 
+           result.command = mergeDeep(result.command ?? {}, yield* Effect.promise(() => ConfigCommand.load(dir)))
+           result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.load(dir)))
+diff --git a/packages/tui/src/app.tsx b/packages/tui/src/app.tsx
+index 57f372ef7..5d7e25bd2 100644
+--- a/packages/tui/src/app.tsx
++++ b/packages/tui/src/app.tsx
+@@ -190,8 +190,9 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+     Effect.gen(function* () {
+       const renderer = yield* Effect.acquireRelease(
+         Effect.tryPromise({
+-          try: () =>
+-            createCliRenderer({
++          try: () => {
++            console.error("[OPENCODE_ANDROID_DIAG] before createCliRenderer")
++            return createCliRenderer({
+               externalOutputMode: "passthrough",
+               targetFps: 60,
+               gatherStats: false,
+@@ -203,8 +204,12 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+               consoleOptions: {
+                 keyBindings: [{ name: "y", ctrl: true, action: "copy-selection" }],
+               },
+-            }),
+-          catch: (error) => (error instanceof Error ? error : new Error(String(error))),
++            })
++          },
++          catch: (error) => {
++            console.error("[OPENCODE_ANDROID_DIAG] createCliRenderer rejected:", error)
++            return error instanceof Error ? error : new Error(String(error))
++          },
+         }),
+         (renderer) =>
+           Effect.sync(() => {
+@@ -242,6 +247,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
+         const mode = (await renderer.waitForThemeMode(1000)) ?? "dark"
+         if (renderer.isDestroyed) return
+ 
++        console.error("[OPENCODE_ANDROID_DIAG] before render")
+         await render(() => {
+           return (
+             <ExitProvider
+diff --git a/packages/tui/src/audio.ts b/packages/tui/src/audio.ts
+index 2f8a0b665..2d24144d1 100644
+--- a/packages/tui/src/audio.ts
++++ b/packages/tui/src/audio.ts
+@@ -5,6 +5,12 @@ let audio: Audio | null | undefined
+ const sounds = new Map<string, Promise<AudioSound | null>>()
+ 
+ function getAudio() {
++  if (process.env.TERMUX_VERSION || process.env.ANDROID_ROOT || process.env.PREFIX?.includes("com.termux")) {
++    // Native audio is stubbed out in the Android libopentui build; never
++    // construct the JS Audio wrapper on Android.
++    audio = null
++    return null
++  }
+   if (audio !== undefined) return audio
+   try {
+     const next = Audio.create({ autoStart: false })

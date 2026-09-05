@@ -120,12 +120,6 @@ OPENTUI_BACKUPS=()
 echo ">>> Patching @opentui/core-linux-x64 packages for Android aarch64..."
 for pkg_dir in "${OPENTUI_PACKAGES[@]}"; do
     so_file="$pkg_dir/libopentui.so"
-    idx_file=""
-    if [ -f "$pkg_dir/index.js" ]; then
-        idx_file="$pkg_dir/index.js"
-    elif [ -f "$pkg_dir/index.ts" ]; then
-        idx_file="$pkg_dir/index.ts"
-    fi
 
     if [ ! -f "$so_file" ]; then
         echo "WARNING: $so_file not found, skipping $pkg_dir"
@@ -139,19 +133,25 @@ for pkg_dir in "${OPENTUI_PACKAGES[@]}"; do
     OPENTUI_BACKUPS+=("$so_file:$so_backup")
     echo "    Swapped $so_file"
 
-    # Patch the index file to load from filesystem on Android.
-    # Bun's /$bunfs/root/ virtual path works on desktop Linux but is not
-    # intercepted by the Android runtime, so the dlopen/openat fails with ENOENT.
-    # We fall back to a real Termux filesystem path via OPENTUI_LIB_PATH.
-    if [ -n "$idx_file" ]; then
-        idx_backup="${idx_file}.bak"
-        cp "$idx_file" "$idx_backup"
-        cat > "$idx_file" <<'IDXEOF'
+    # Patch the index files to load from the filesystem on Android.
+    # Since 0.4.5 the package ships index.js (ESM) and index.bun.js (bun
+    # condition, which does `await import("./libopentui.so", { with: { type:
+    # "file" } })`). Bun's /$bunfs/root/ virtual path works on desktop Linux
+    # but is not intercepted by the Android runtime, so the dlopen/openat
+    # fails with ENOENT. Both entries are replaced with a loader that falls
+    # back to a real Termux filesystem path via OPENTUI_LIB_PATH.
+    for idx_name in index.js index.bun.js; do
+        idx_file="$pkg_dir/$idx_name"
+        if [ -f "$idx_file" ]; then
+            idx_backup="${idx_file}.bak"
+            cp "$idx_file" "$idx_backup"
+            cat > "$idx_file" <<'IDXEOF'
 module.exports = process.env["OPENTUI_LIB_PATH"] || "/data/data/com.termux/files/usr/lib/libopentui.so";
 IDXEOF
-        OPENTUI_BACKUPS+=("$idx_file:$idx_backup")
-        echo "    Patched $idx_file"
-    fi
+            OPENTUI_BACKUPS+=("$idx_file:$idx_backup")
+            echo "    Patched $idx_file"
+        fi
+    done
 done
 
 # Synthesize @opentui/core-linux-arm64 so opentui's platform detection resolves
@@ -195,13 +195,13 @@ fi
 # against the declared FFI type before Zig sees them; Android terminal/layout
 # churn can briefly produce negative viewport sizes, which otherwise throws
 # "integer does not fit in destination type" for u32 arguments.
+# Since @opentui/core 0.4.5 the generated JS lives in chunk-bun-*.js /
+# chunk-node-*.js files (no more index-*.js), and existsSync became
+# existsSync3 after bundling.
 echo ">>> Patching @opentui/core FFI u32 boundary..."
 while IFS= read -r -d '' opentui_js; do
-    if grep -q "function toU32(value)" "$opentui_js" && grep -q "OPENTUI_LIB_PATH" "$opentui_js" && grep -q "if (true) return null;" "$opentui_js"; then
+    if grep -q "function toU32(value)" "$opentui_js" && grep -q 'process.env\["OPENTUI_LIB_PATH"\]' "$opentui_js"; then
         echo "    $opentui_js already patched"
-        continue
-    fi
-    if ! grep -q "textBufferViewSetViewport(view, x, y, width, height)" "$opentui_js"; then
         continue
     fi
     python3 - "$opentui_js" <<'PY'
@@ -210,157 +210,130 @@ from pathlib import Path
 
 path = Path(sys.argv[1])
 text = path.read_text()
-text = text.replace(
-    'if (isBunfsPath(targetLibPath)) {\n  targetLibPath = targetLibPath.replace("../", "");\n}\nif (!existsSync2(targetLibPath)) {',
-    'if (isBunfsPath(targetLibPath)) {\n  targetLibPath = targetLibPath.replace("../", "");\n}\nif (process.env["OPENTUI_LIB_PATH"]) {\n  targetLibPath = process.env["OPENTUI_LIB_PATH"];\n}\nif (!existsSync2(targetLibPath)) {',
-)
-text = text.replace(
-    'function toNumber(value) {\n  return typeof value === "bigint" ? Number(value) : value;\n}\n',
-    'function toNumber(value) {\n  return typeof value === "bigint" ? Number(value) : value;\n}\nfunction toU32(value) {\n  if (!Number.isFinite(value) || value <= 0) return 0;\n  return Math.min(Math.trunc(value), 4294967295);\n}\n',
-)
-text = text.replace(
-    'this.opentui.symbols.textBufferViewSetWrapWidth(view, width);',
-    'this.opentui.symbols.textBufferViewSetWrapWidth(view, toU32(width));',
-)
-text = text.replace(
-    'this.opentui.symbols.textBufferViewSetFirstLineOffset(view, offset);',
-    'this.opentui.symbols.textBufferViewSetFirstLineOffset(view, toU32(offset));',
-)
-text = text.replace(
-    'this.opentui.symbols.textBufferViewSetViewportSize(view, width, height);',
-    'this.opentui.symbols.textBufferViewSetViewportSize(view, toU32(width), toU32(height));',
-)
-text = text.replace(
-    'this.opentui.symbols.textBufferViewSetViewport(view, x, y, width, height);',
-    'this.opentui.symbols.textBufferViewSetViewport(view, toU32(x), toU32(y), toU32(width), toU32(height));',
-)
-text = text.replace(
-    'this.opentui.symbols.textBufferViewMeasureForDimensions(view, width, height, resultPtr);',
-    'this.opentui.symbols.textBufferViewMeasureForDimensions(view, toU32(width), toU32(height), resultPtr);',
-)
-text = text.replace(
-    '  static create(options = {}) {\n    return new Audio(resolveRenderLib(), options);\n  }\n',
-    '  static create(options = {}) {\n    if (true) return null;\n    return new Audio(resolveRenderLib(), options);\n  }\n',
-)
-text = text.replace(
-    '    const useFeedOutput = !this._usesProcessStdout && !useMemoryBufferedOutput;',
-    '    const useFeedOutput = false;',
-)
+changes = []
+
+# 1. OPENTUI_LIB_PATH override for the native library location.
+#    0.4.5: existsSync3 (was existsSync2 in 0.4.x). Handle both.
+if 'process.env["OPENTUI_LIB_PATH"]' not in text and "targetLibPath" in text:
+    done = False
+    for exists_fn in ("existsSync3", "existsSync2", "existsSync"):
+        old = (
+            'if (isBunfsPath(targetLibPath)) {\n'
+            '    targetLibPath = targetLibPath.replace("../", "");\n'
+            '  }\n'
+            f'  if (!{exists_fn}(targetLibPath)) {{'
+        )
+        new = (
+            'if (isBunfsPath(targetLibPath)) {\n'
+            '    targetLibPath = targetLibPath.replace("../", "");\n'
+            '  }\n'
+            '  if (process.env["OPENTUI_LIB_PATH"]) {\n'
+            '    targetLibPath = process.env["OPENTUI_LIB_PATH"];\n'
+            '  }\n'
+            f'  if (!{exists_fn}(targetLibPath)) {{'
+        )
+        if old in text:
+            text = text.replace(old, new, 1)
+            changes.append(f"lib-path@{exists_fn}")
+            done = True
+            break
+    if not done:
+        # Indentation-agnostic fallback: insert after the isBunfsPath block.
+        import re
+        m = re.search(
+            r'(if \(isBunfsPath\(targetLibPath\)\) \{[^}]*\}\n)(\s*if\s*\(!\w+\(targetLibPath\)\))',
+            text,
+        )
+        if m:
+            text = text.replace(
+                m.group(2),
+                '  if (process.env["OPENTUI_LIB_PATH"]) {\n    targetLibPath = process.env["OPENTUI_LIB_PATH"];\n  }\n' + m.group(2),
+                1,
+            )
+            changes.append("lib-path@fallback")
+        else:
+            print(f"    WARNING: {path.name}: targetLibPath block found but no insertion point")
+
+# 2. toU32 sanitization for FFI u32 arguments.
+if "function toU32(value)" not in text:
+    anchor = 'function toNumber(value) {\n  return typeof value === "bigint" ? Number(value) : value;\n}\n'
+    helper = 'function toU32(value) {\n  if (!Number.isFinite(value) || value <= 0) return 0;\n  return Math.min(Math.trunc(value), 4294967295);\n}\n'
+    if anchor in text:
+        text = text.replace(anchor, anchor + helper, 1)
+        changes.append("toU32")
+    else:
+        anchor2 = "  textBufferViewSetWrapWidth(view, width) {"
+        if anchor2 in text:
+            text = text.replace(anchor2, helper + anchor2, 1)
+            changes.append("toU32@alt")
+
+for old, new, tag in [
+    ('this.opentui.symbols.textBufferViewSetWrapWidth(view, width);',
+     'this.opentui.symbols.textBufferViewSetWrapWidth(view, toU32(width));', 'wrapWidth'),
+    ('this.opentui.symbols.textBufferViewSetFirstLineOffset(view, offset);',
+     'this.opentui.symbols.textBufferViewSetFirstLineOffset(view, toU32(offset));', 'firstLine'),
+    ('this.opentui.symbols.textBufferViewSetViewportSize(view, width, height);',
+     'this.opentui.symbols.textBufferViewSetViewportSize(view, toU32(width), toU32(height));', 'vpSize'),
+    ('this.opentui.symbols.textBufferViewSetViewport(view, x, y, width, height);',
+     'this.opentui.symbols.textBufferViewSetViewport(view, toU32(x), toU32(y), toU32(width), toU32(height));', 'viewport'),
+    ('this.opentui.symbols.textBufferViewMeasureForDimensions(view, width, height, resultPtr);',
+     'this.opentui.symbols.textBufferViewMeasureForDimensions(view, toU32(width), toU32(height), resultPtr);', 'measure'),
+]:
+    if old in text:
+        text = text.replace(old, new)
+        changes.append(tag)
+
+# 3. Renderer span-feed guard carried from v0.2.1/v0.2.2: the memory-buffered
+#    feed output path panics on Android after several responses.
+ufe_old = '    const useFeedOutput = !this._usesProcessStdout && !useMemoryBufferedOutput;'
+if ufe_old in text:
+    text = text.replace(ufe_old, '    const useFeedOutput = false;')
+    changes.append("useFeedOutput")
+
 path.write_text(text)
+print(f"    {path.name}: {'+'.join(changes) if changes else 'nothing to do'}")
 PY
-    echo "    Patched $opentui_js"
-done < <(find "$OPENCODE_SRC" -path '*/node_modules/@opentui/core/index-*.js' -type f -print0 2>/dev/null || true)
+done < <(find "$OPENCODE_SRC" \( -path '*/node_modules/@opentui/core/chunk-bun-*.js' -o -path '*/node_modules/@opentui/core/chunk-node-*.js' -o -path '*/node_modules/@opentui/core/index-*.js' \) -type f -print0 2>/dev/null || true)
 
 # Patch OpenCode source for Android/Termux runtime constraints.
 # We cannot modify the upstream source directly, so apply local patches here.
 echo ">>> Patching OpenCode source for Android/Termux..."
 
-# 1. Keep cache/tmp paths inside the Termux home directory.
-#    Bun resolves os.tmpdir() to /data/local/tmp on Android, which the Termux
-#    app sandbox cannot mkdir/read under normal app context.
-GLOBAL_TS="$OPENCODE_SRC/packages/core/src/global.ts"
-if [ -f "$GLOBAL_TS" ]; then
-    if ! grep -q 'home.startsWith("/data/data/com.termux/")' "$GLOBAL_TS"; then
-        perl -i -pe '
-            s/^const app = "opencode"$/const app = "opencode"\nconst home = process.env.OPENCODE_TEST_HOME ?? os.homedir()\nconst isAndroid = Boolean(\n  process.env.TERMUX_VERSION || process.env.ANDROID_ROOT || home.startsWith("\/data\/data\/com.termux\/"),\n)/;
-            s/^const cache = path\.join\(xdgCache!, app\)$/const cache = isAndroid ? path.join(home, ".cache", app) : path.join(xdgCache!, app)/;
-            s/^const tmp = path\.join\(os\.tmpdir\(\), app\)$/const tmp = isAndroid ? path.join(cache, "tmp") : path.join(os.tmpdir(), app)/;
-            s/return process\.env\.OPENCODE_TEST_HOME \?\? os\.homedir\(\)/return home/;
-        ' "$GLOBAL_TS"
-        echo "    Patched $GLOBAL_TS (Termux cache/tmp paths)"
+# Patch OpenCode source for Android/Termux runtime constraints via a
+# versioned git patch (validated against the pinned OpenCode tag). The
+# patch covers:
+#   - packages/core/src/global.ts          Termux-safe cache/tmp paths
+#   - packages/core/src/filesystem/watcher.ts  disable @parcel/watcher
+#   - packages/opencode/src/config/config.ts   skip background npm install
+#   - packages/tui/src/audio.ts            disable TUI audio
+#   - packages/tui/src/app.tsx             TUI startup diagnostics
+#   - packages/core/src/cross-spawn-spawner.ts no negative-pid kill / detached
+#   - packages/core/src/shell.ts           killTree without negative-pid kill
+OPENCODE_PATCH="$REPO_ROOT/patches/opencode/android-termux-1.18.patch"
+if [ -f "$OPENCODE_PATCH" ]; then
+    echo ">>> Applying OpenCode Android patch (patches/opencode/android-termux-1.18.patch)..."
+    cd "$OPENCODE_SRC"
+    if git apply --check "$OPENCODE_PATCH" 2>/dev/null; then
+        git apply "$OPENCODE_PATCH"
+        echo "    Patch applied successfully"
+    elif git apply --check --reverse "$OPENCODE_PATCH" 2>/dev/null; then
+        echo "    Patch already applied, skipping"
     else
-        echo "    $GLOBAL_TS already patched"
+        echo "ERROR: OpenCode Android patch does not apply to OpenCode ${OPENCODE_VERSION}"
+        echo "       Regenerate patches/opencode/android-termux-1.18.patch against this tag."
+        exit 1
     fi
+    cd "$REPO_ROOT"
+else
+    echo "ERROR: $OPENCODE_PATCH not found"
+    exit 1
 fi
 
-# 2. Disable the file watcher on Android/Termux.
-#    @parcel/watcher bundles the host (x86_64) native binding on a Linux build
-#    machine, which dlopen's on ARM64 Android and crashes. Until the ARM64
-#    binding is bundled, simply disable file watching.
-WATCHER_TS="$OPENCODE_SRC/packages/core/src/filesystem/watcher.ts"
-if [ ! -f "$WATCHER_TS" ]; then
-    WATCHER_TS="$OPENCODE_PKG/src/file/watcher.ts"
-fi
-if [ -f "$WATCHER_TS" ]; then
-    if ! grep -q "TERMUX_VERSION" "$WATCHER_TS"; then
-        perl -i -pe '
-            s/^(\s*const watcher = lazy\(\(\): typeof import\("(.*)"\) \| undefined => \{)/$1\n  if (process.env.TERMUX_VERSION \|\| process.env.ANDROID_ROOT) return/
-        ' "$WATCHER_TS"
-        echo "    Patched $WATCHER_TS (disable file watcher on Android)"
-    else
-        echo "    $WATCHER_TS already patched"
-    fi
-fi
-
-# 3. Skip config-dir dependency installs on Android/Termux.
-#    In a bun build --compile binary, process.execPath is the compiled opencode
-#    binary, so `bun install` becomes `opencode.bin install`, which fails.
-#    User plugins are not supported in the Termux build anyway.
-CONFIG_TS="$OPENCODE_PKG/src/config/config.ts"
-if [ -f "$CONFIG_TS" ]; then
-    if ! grep -q "TERMUX_VERSION" "$CONFIG_TS"; then
-        perl -i -0777 -pe '
-            s/(\n\s*)const dep = yield\* npmSvc\n\s+\.install\(dir,/$1if (process.env.TERMUX_VERSION || process.env.ANDROID_ROOT) {\n$1  yield* Effect.logInfo("skipping dependency install on Android Termux", { dir })\n$1} else {\n$1  const dep = yield* npmSvc\n$1    .install(dir,/;
-            s/(\n\s*)deps\.push\(dep\)/$1deps.push(dep)\n$1}/;
-        ' "$CONFIG_TS"
-        echo "    Patched $CONFIG_TS (skip dependency install on Android)"
-    else
-        echo "    $CONFIG_TS already patched"
-    fi
-fi
-
-# 4. Allow BunProc.which() to use a real bun binary if one is shipped.
-BUNPROC_TS="$OPENCODE_PKG/src/bun/index.ts"
-if [ -f "$BUNPROC_TS" ]; then
-    if ! grep -q "OPENCODE_BUN_PATH" "$BUNPROC_TS"; then
-        perl -i -0777 -pe '
-            s/  export function which\(\) \{\n    return process\.execPath\n  \}/  export function which() {\n    return process.env.OPENCODE_BUN_PATH \|\| process.execPath\n  }/
-        ' "$BUNPROC_TS"
-        echo "    Patched $BUNPROC_TS (OPENCODE_BUN_PATH support)"
-    else
-        echo "    $BUNPROC_TS already patched"
-    fi
-fi
-
-# 5. Disable TUI audio on the Android/Termux build.
-#    OpenTUI audio group handling panics on Android after a few prompt responses.
-AUDIO_TS="$OPENCODE_SRC/packages/tui/src/audio.ts"
-if [ -f "$AUDIO_TS" ]; then
-    if ! grep -q 'const disableAudio = true' "$AUDIO_TS"; then
-        perl -i -0777 -pe '
-            s/const disableAudio = process\.platform === "linux" \&\& process\.arch === "arm64"\n//;
-            s/const disableAudio = process\.execPath\.includes\("\/data\/data\/com\.termux\/"\)\n//;
-            s/const disableAudio = process\.env\["OPENCODE_DISABLE_TUI_AUDIO"\] === "1"\n//;
-            s/(const sounds = new Map<string, Promise<AudioSound \| null>>\(\)\n)/$1const disableAudio = true\n/;
-            s/function getAudio\(\) \{\n/function getAudio() {\n  if (disableAudio) {\n    audio = null\n    return null\n  }\n/;
-        ' "$AUDIO_TS"
-        echo "    Patched $AUDIO_TS (disable TUI audio on Android)"
-    else
-        echo "    $AUDIO_TS already patched"
-    fi
-fi
-
-# 6. Add diagnostic logging around createCliRenderer/render in the TUI app.
-#    The TUI hangs on Android with no output; we need to know whether
-#    createCliRenderer succeeds, throws, or never returns.
-APP_TSX="$OPENCODE_PKG/src/cli/cmd/tui/app.tsx"
-if [ -f "$APP_TSX" ]; then
-    if ! grep -q "OPENCODE_ANDROID_DIAG" "$APP_TSX"; then
-        perl -i -0777 -pe '
-            s/(const renderer = await createCliRenderer\(rendererConfig\(input\.config\)\))/console.error("[OPENCODE_ANDROID_DIAG] before createCliRenderer");\n    $1/;
-            s/(await createCliRenderer\(rendererConfig\(input\.config\)\))/await createCliRenderer(rendererConfig(input.config)).then((r) => {\n      console.error("[OPENCODE_ANDROID_DIAG] createCliRenderer resolved");\n      return r;\n    }).catch((e) => {\n      console.error("[OPENCODE_ANDROID_DIAG] createCliRenderer rejected:", e);\n      throw e;\n    })/;
-            s/(await render\(\(\) => \{)/console.error("[OPENCODE_ANDROID_DIAG] before render");\n    await render(() => {/;
-        ' "$APP_TSX"
-        echo "    Patched $APP_TSX (TUI diagnostics)"
-    else
-        echo "    $APP_TSX already patched"
-    fi
-fi
-
-# 5. Work around missing type-only AWS ESM exports that Bun 1.3.2 still tries
-#    to resolve while bundling. Newer Bun versions are better here, but 1.3.2
-#    remains pinned because its standalone module graph is compatible with the
-#    Android Bun 1.2.13 runtime.
+# Work around missing type-only AWS ESM exports that Bun 1.3.2 still tries
+# to resolve while bundling. Newer Bun versions are better here, but 1.3.2
+# remains pinned because its standalone module graph is compatible with the
+# Android Bun 1.2.13 runtime. (1.18.x no longer depends on the Cognito
+# provider directly; stub it only if present as a transitive dependency.)
 AWS_COGNITO_INDEX="$OPENCODE_SRC/node_modules/.bun/@aws-sdk+credential-provider-cognito-identity@"*/node_modules/@aws-sdk/credential-provider-cognito-identity/dist-es/index.js
 for aws_index in $AWS_COGNITO_INDEX; do
     if [ -f "$aws_index" ]; then

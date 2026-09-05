@@ -15,9 +15,10 @@ source "$SCRIPT_DIR/env.sh"
 ZIG_BIN="${ZIG_BIN:-zig}"
 
 # Pin opentui to the exact version that OpenCode depends on.
-# This commit corresponds to @opentui/core v0.4.2. We still patch its Zig
-# build so the produced .so has a NEEDED: libc.so entry for Android dlopen().
-OPENTUI_COMMIT="3e2d0aabeb47923f05adc6f1052401367cfde3d4"
+# This commit corresponds to @opentui/core v0.4.5 (OpenCode 1.18.27 dependency).
+# We still patch its Zig build so the produced .so has a NEEDED: libc.so entry
+# for Android dlopen().
+OPENTUI_COMMIT="0c8c4f7cff2927e3df63a9757a45eff9a343611c"
 
 echo "=== Building libopentui.so for Android aarch64 ==="
 
@@ -182,6 +183,68 @@ audio_bodies = {
 }
 for signature, body in audio_bodies.items():
     lib_text = replace_export_body(lib_text, signature, body)
+
+# 0.4.5 added audio *stream* exports (output-stream API). They all guard on
+# acquireAudioEngine(handle) which fails for the INVALID_HANDLE returned by our
+# stubbed createAudioEngine, but stub them defensively so miniaudio's stream
+# implementation is never linked into the call graph.
+stream_audio_bodies = {
+    "export fn audioCreateStream(\n    engine_handle: NativeHandle,\n    options_ptr: ?*const native_audio.StreamOptions,\n    out_stream_id: ?*u32,\n) i32": """    _ = engine_handle;
+    _ = options_ptr;
+    _ = out_stream_id;
+    return native_audio.Status.err_invalid;""",
+    "export fn audioWriteStream(\n    engine_handle: NativeHandle,\n    stream_id: u32,\n    data_ptr: ?[*]const u8,\n    data_len: u32,\n) i32": """    _ = engine_handle;
+    _ = stream_id;
+    _ = data_ptr;
+    _ = data_len;
+    return native_audio.Status.err_invalid;""",
+    "export fn audioEndStream(engine_handle: NativeHandle, stream_id: u32) i32": """    _ = engine_handle;
+    _ = stream_id;
+    return native_audio.Status.err_invalid;""",
+    "export fn audioRestartStream(engine_handle: NativeHandle, stream_id: u32) i32": """    _ = engine_handle;
+    _ = stream_id;
+    return native_audio.Status.err_invalid;""",
+    "export fn audioSetStreamVolume(engine_handle: NativeHandle, stream_id: u32, volume: f32) i32": """    _ = engine_handle;
+    _ = stream_id;
+    _ = volume;
+    return native_audio.Status.err_invalid;""",
+    "export fn audioSetStreamPan(engine_handle: NativeHandle, stream_id: u32, pan: f32) i32": """    _ = engine_handle;
+    _ = stream_id;
+    _ = pan;
+    return native_audio.Status.err_invalid;""",
+    "export fn audioSetStreamGroup(engine_handle: NativeHandle, stream_id: u32, group_id: u32) i32": """    _ = engine_handle;
+    _ = stream_id;
+    _ = group_id;
+    return native_audio.Status.err_invalid;""",
+    "export fn audioGetStreamStats(engine_handle: NativeHandle, stream_id: u32, out_stats: ?*native_audio.StreamStats) i32": """    _ = engine_handle;
+    _ = stream_id;
+    _ = out_stats;
+    return native_audio.Status.err_invalid;""",
+    "export fn audioCloseStream(\n    engine_handle: NativeHandle,\n    stream_id: u32,\n    reason: u32,\n    out_final_stats: ?*native_audio.StreamStats,\n) i32": """    _ = engine_handle;
+    _ = stream_id;
+    _ = reason;
+    _ = out_final_stats;
+    return native_audio.Status.err_invalid;""",
+}
+for signature, body in stream_audio_bodies.items():
+    lib_text = replace_export_body(lib_text, signature, body)
+
+# Guard: after stubbing, no audio export may still reach the live engine via
+# acquireAudioEngine (all of them use this guard internally when live). If
+# opentui adds new audio exports, fail loudly instead of silently shipping a
+# live miniaudio call graph that panics on Android (the v0.2.1 "integer does
+# not fit" hang).
+import re as _re
+_unstubbed = []
+for m in _re.finditer(r"export fn (audio\w+)\s*\(", lib_text):
+    end = lib_text.find("\n}", m.end())
+    if end != -1 and "acquireAudioEngine" in lib_text[m.end():end]:
+        _unstubbed.append(m.group(1))
+if _unstubbed:
+    raise SystemExit(
+        "unstubbed audio exports in lib.zig: %s — update audio_bodies/stream_audio_bodies"
+        % ", ".join(_unstubbed)
+    )
 lib_zig.write_text(lib_text)
 
 span_text = span_feed_zig.read_text()
@@ -194,10 +257,26 @@ span_text = replace_export_body(
 span_feed_zig.write_text(span_text)
 
 yoga_text = yoga_zig.read_text()
-yoga_text = yoga_text.replace(
-    "const callback_allocator = std.heap.c_allocator;",
-    "const callback_allocator = std.heap.page_allocator;",
-)
+# 0.4.2: module-level `const callback_allocator = std.heap.c_allocator;`
+# 0.4.5: constant removed; std.heap.c_allocator used inline at the two
+#        CallbackContext sites. Patch both layouts to use page_allocator —
+#        c_allocator (malloc) misbehaves on Android/Bionic under TUI churn.
+if "const callback_allocator = std.heap.c_allocator;" in yoga_text:
+    yoga_text = yoga_text.replace(
+        "const callback_allocator = std.heap.c_allocator;",
+        "const callback_allocator = std.heap.page_allocator;",
+    )
+else:
+    yoga_text = yoga_text.replace(
+        "std.heap.c_allocator.create(CallbackContext)",
+        "std.heap.page_allocator.create(CallbackContext)",
+    )
+    yoga_text = yoga_text.replace(
+        "std.heap.c_allocator.destroy(ctx)",
+        "std.heap.page_allocator.destroy(ctx)",
+    )
+if "std.heap.c_allocator" in yoga_text:
+    raise SystemExit("yoga.zig still references std.heap.c_allocator — update Android allocator patch")
 yoga_zig.write_text(yoga_text)
 PY
 fi

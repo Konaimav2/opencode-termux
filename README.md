@@ -78,6 +78,7 @@ opencode-termux/
     webkit/android-support.patch   # 5 files, WebKit/JSC Android fixes
     zig/posix-android-sigaction.patch  # Zig stdlib sigaction/sigprocmask fix
     opentui/android-libc-link.patch  # Link NDK libc.so for Android dlopen
+    opencode/android-termux-1.18.patch # OpenCode 1.18.x Termux runtime guards
   scripts/
     apply-patches.sh               # Clone upstream repos + apply patches
     build-icu.sh                   # Cross-compile ICU 75.1 for Android
@@ -339,7 +340,8 @@ The Bun team [closed Android support as "not planned"](https://github.com/oven-s
 | Android NDK | r28b (28.1.13356709) | Clang 19, stable |
 | Android API level | 24 (Android 7.0+) | Minimum for 64-bit Termux |
 | Zig (for opentui) | 0.15.2 | Latest stable, Android target support |
-| OpenCode | 1.3.13 | Current release |
+| OpenCode | 1.18.27 | Current release |
+| OpenTUI | `0c8c4f7c` (v0.4.5) | Matches OpenCode 1.18.27's @opentui/core dependency |
 | TinyCC | `b91835d8` (oven-sh/tinycc) | Matches Bun v1.2.13's expected TinyCC |
 
 ---
