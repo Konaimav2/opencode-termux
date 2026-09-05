@@ -326,6 +326,18 @@ if ufe_old in text:
     text = text.replace(ufe_old, '    const useFeedOutput = false;')
     changes.append("useFeedOutput")
 
+# 4. Tree-sitter worker asset init: with splitting disabled the worker asset
+#    resolution runs eagerly at module init, and the file-asset loader has
+#    no default export under host Bun 1.3.2, crashing the whole graph in
+#    normalizeLoadedFilePath before the TUI even starts. The resolved path
+#    is unused at runtime (OTUI_TREE_SITTER_WORKER_PATH define takes
+#    precedence), so make the init non-fatal.
+old_worker = 'var bundledTreeSitterWorkerPath = await resolveBundledFilePath(PARSER_WORKER_ASSET_KEY, () => import("@opentui/core/parser.worker", { with: { type: "file" } }), new URL("../lib/tree-sitter/parser.worker.js", import.meta.url), import.meta.url, { useAssetRoot: false });'
+new_worker = 'var bundledTreeSitterWorkerPath = await resolveBundledFilePath(PARSER_WORKER_ASSET_KEY, () => import("@opentui/core/parser.worker", { with: { type: "file" } }), new URL("../lib/tree-sitter/parser.worker.js", import.meta.url), import.meta.url, { useAssetRoot: false }).catch(() => undefined);'
+if old_worker in text:
+    text = text.replace(old_worker, new_worker, 1)
+    changes.append("worker-asset-catch")
+
 path.write_text(text)
 print(f"    {path.name}: {'+'.join(changes) if changes else 'nothing to do'}")
 PY

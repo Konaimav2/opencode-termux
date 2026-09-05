@@ -57,20 +57,21 @@ JSON.parse(modelsData)
 console.log("Loaded models.dev snapshot")
 
 console.log("\n=== Step 2: Resolving OpenTUI workers ===")
-// Mirror upstream build.ts: embed the @opentui/core parser worker content
-// under a fixed name and expose it via OTUI_TREE_SITTER_WORKER_PATH. The
-// worker path resolves inside bunfs as /$bunfs/root/<name> at runtime.
-let treeSitterWorker: string
+// The tree-sitter parser worker is bundled as an entrypoint (same approach
+// as the proven 1.17.x builds) and exposed via OTUI_TREE_SITTER_WORKER_PATH,
+// which resolves inside bunfs as /$bunfs/root/<relative path> at runtime.
+// NOTE: upstream 1.18.x embeds the worker via Bun.build `files:` instead,
+// but host Bun 1.3.2 miscompiles that path, so we keep the entrypoint way.
+const localPath = path.resolve(OPENCODE_DIR, "node_modules/@opentui/core/parser.worker.js")
+const rootPath = path.resolve(OPENCODE_DIR, "../../node_modules/@opentui/core/parser.worker.js")
+let parserWorkerResolved: string
 try {
-  treeSitterWorker = await Bun.file(require.resolve("@opentui/core/parser.worker")).text()
+  parserWorkerResolved = fs.realpathSync(fs.existsSync(localPath) ? localPath : rootPath)
 } catch {
-  const localPath = path.resolve(OPENCODE_DIR, "node_modules/@opentui/core/parser.worker.js")
-  const rootPath = path.resolve(OPENCODE_DIR, "../../node_modules/@opentui/core/parser.worker.js")
-  treeSitterWorker = await Bun.file(fs.existsSync(localPath) ? localPath : rootPath).text()
+  parserWorkerResolved = require.resolve("@opentui/core/parser.worker.js")
 }
-const treeSitterWorkerPath = "opentui-tree-sitter-worker.js"
 const workerPath = "./src/cli/tui/worker.ts"
-console.log(`Tree-sitter worker: embedded as ${treeSitterWorkerPath} (${treeSitterWorker.length} bytes)`)
+console.log(`Parser worker: ${parserWorkerResolved}`)
 console.log(`OpenCode worker: ${workerPath}`)
 
 await $`rm -rf ${OUTPUT_DIR}`
@@ -80,6 +81,7 @@ console.log("\n=== Step 3: Bundling OpenCode ===")
 const hostBinaryPath = path.join(OUTPUT_DIR, "opencode-host")
 const plugin = createSolidTransformPlugin()
 const bunfsRoot = "/$bunfs/root/"
+const workerRelativePath = path.relative(OPENCODE_DIR, parserWorkerResolved).replaceAll("\\", "/")
 
 const result = await Bun.build({
   conditions: ["bun", "node"],
@@ -89,10 +91,12 @@ const result = await Bun.build({
   format: "esm",
   minify: true,
   sourcemap: "none",
-  // NOTE: splitting must stay disabled with host Bun 1.3.2 — its chunker can
-  // emit colliding chunk names with the 1.18.x dependency tree
-  // ("Multiple files share the same output path" for openai's resources).
-  // Without splitting, shared code between entrypoints is inlined instead.
+  // NOTE: splitting must stay disabled with host Bun 1.3.2 — its chunker
+  // emits colliding chunk names ("Multiple files share the same output
+  // path") and duplicate exports ("Cannot export a duplicate name") with
+  // the 1.18.x dependency tree. Without splitting, shared code between
+  // entrypoints is inlined instead (verified: module init order stays
+  // correct, worker assets resolve via OTUI_TREE_SITTER_WORKER_PATH).
   splitting: false,
   compile: {
     autoloadBunfig: false,
@@ -102,15 +106,12 @@ const result = await Bun.build({
     outfile: hostBinaryPath,
     execArgv: [`--user-agent=opencode/${VERSION}`, "--use-system-ca", "--"],
   },
-  files: {
-    [treeSitterWorkerPath]: treeSitterWorker,
-  },
-  entrypoints: ["./src/index.ts", workerPath],
+  entrypoints: ["./src/index.ts", parserWorkerResolved, workerPath],
   define: {
     FFF_LIBC: `"gnu"`,
     OPENCODE_VERSION: `'${VERSION}'`,
     OPENCODE_MODELS_DEV: modelsData,
-    OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + treeSitterWorkerPath,
+    OTUI_TREE_SITTER_WORKER_PATH: bunfsRoot + workerRelativePath,
     OPENCODE_WORKER_PATH: workerPath,
     OPENCODE_CHANNEL: `'${CHANNEL}'`,
     OPENCODE_LIBC: `"glibc"`,
