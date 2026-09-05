@@ -126,16 +126,16 @@ screenshot → vision analysis → continue coding.
 ### Old-build comparison (optional but valuable)
 The known hang was reproducible by resuming the large vision-heavy session.
 Production sessions are NOT visible to the test build (isolated). To compare
-fairly, copy a **copy** of a problematic session into the test profile:
+fairly, snapshot a **copy** of the production database into the test profile
+(never move the original — 1.18.x runs migrations on first open):
 
 ```bash
-cp -r ~/.local/share/opencode/storage/session/<SESSION_ID> \
-      ~/.opencode-next/share/opencode/storage/session/
-cp ~/.local/share/opencode/storage/message/<SESSION_ID> \
-      ~/.opencode-next/share/opencode/storage/message/ 2>/dev/null || true
+rm -f ~/.opencode-next/share/opencode/opencode.db*
+python3 -c 'import sqlite3; c=sqlite3.connect("/data/data/com.termux/files/home/.local/share/opencode/opencode.db"); c.execute("vacuum into \x27/data/data/com.termux/files/home/.opencode-next/share/opencode/opencode.db\x27")'
 ```
-Then resume that session in `opencode-next`. If it hangs the same way, capture
-`~/.opencode-next/share/opencode/log/*.log` before killing it.
+Then resume that session in `opencode-next` (`run -s <SESSION_ID>` or the
+TUI history picker). If it hangs the same way, capture
+`~/.opencode-next/share/opencode/log/opencode.log` before killing it.
 
 ---
 
@@ -170,11 +170,43 @@ Keep `~/opencode-next/` around until you're confident; it's harmless.
 - File watcher disabled on Android (falls back gracefully)
 - TUI audio disabled (native audio stubbed)
 - `bun upgrade` disabled — update by installing new release packages
+- **`process.env` is empty inside Bun standalone on Android** (measured: 0
+  keys). Consequences:
+  - Provider API keys from shell env vars are invisible — use `auth.json`
+    or inline `apiKey` in `opencode.json` instead
+  - All Android behavior in this build is env-free by design (paths resolve
+    from `os.homedir()` + executable location)
+  - This also affects the old 1.17.x builds: any `TERMUX_*`-gated behavior
+    there silently never fired
+- **ripgrep auto-install is broken on Android**: OpenCode downloads an
+  x86-64 Linux `rg` into its bin cache at runtime (`ENOEXEC` on `@file`
+  mentions / glob). Workaround (test profile shown; production analogous):
+  ```bash
+  rm -f ~/.opencode-next/cache/opencode/bin/rg
+  ln -s $PREFIX/bin/rg ~/.opencode-next/cache/opencode/bin/rg
+  ```
 - Still-open upstream issues: Effect fiber lost-wakeup (#35870), Bun TLS
   event-loop deadlocks (#39977 family), subagent permission hangs (#44747).
   The upgrade converts "hang forever" into "error + retry" for the
   network-stall family; other families may still stall — capture logs and
   file against the fork if you hit them.
+
+## 6. On-device test results (v0.3.0-1.18.27-android-rc3, Android 15)
+
+All headless tests passed on 2026-09-05 (production 1.17.9 untouched):
+
+| Test | Result |
+|---|---|
+| `--version` | `1.18.27` |
+| isolated dirs (`~/.opencode-next/*`, zero `/tmp` refs, strace-verified) | pass |
+| simple text request (9Router/Free) | pass |
+| tool loop (model → bash → result → summary) | pass |
+| session resume (`--continue`) | pass |
+| `gpt-5.6-terra` text request | pass |
+| `gpt-5.6-terra` + tool continuation (the hang signature) | pass |
+| vision: 2.1 MB ADB screenshot → `@` attach → analysis | pass |
+| giant session resume (31.6 MiB, 3353 parts, 811K tokens, 808K cached) | **pass in ~68 s, model replied correctly** (was: infinite hang on 1.17.9) |
+| TUI interactive (prompt, permissions, model switch) | **not tested — please verify** |
 
 ## 6. Building newer versions yourself
 
