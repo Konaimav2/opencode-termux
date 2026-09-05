@@ -1,0 +1,90 @@
+#!/data/data/com.termux/files/usr/bin/sh
+# opencode-next — side-by-side experimental build launcher
+#
+# Runs an experimental opencode-next.bin (e.g. a 1.18.x test build) WITHOUT
+# touching the production 1.17.x install or its data. Derived from bin/opencode:
+# same libtagfix.so / libc++_shared.so / OPENTUI_LIB_PATH / BUN_SELF_EXE
+# handling, plus XDG redirection so sessions, config, auth, and state stay in
+# ~/.opencode-next/ instead of ~/.local/share/opencode and ~/.config/opencode.
+#
+# Install layout (flat, like the release zip):
+#   ~/opencode-next/opencode-next         <- this wrapper
+#   ~/opencode-next/opencode-next.bin     <- experimental ELF binary
+#   ~/opencode-next/libtagfix.so
+#   ~/opencode-next/libc++_shared.so
+#   ~/opencode-next/libopentui.so
+#   (optional) ~/opencode-next/librust_pty_arm64.so
+#
+# Production data isolation:
+#   XDG_DATA_HOME   -> ~/.opencode-next/share    (sessions, opencode.db, auth.json)
+#   XDG_CONFIG_HOME -> ~/.opencode-next/config   (opencode.json)
+#   XDG_CACHE_HOME  -> ~/.opencode-next/cache
+#   XDG_STATE_HOME  -> ~/.opencode-next/state
+# To reuse production provider config: cp ~/.config/opencode/opencode.json \
+#   ~/.opencode-next/config/opencode/  (and auth.json from the data dir if wanted)
+#
+# Rollback: rm -rf ~/opencode-next ~/.opencode-next
+
+set -e
+
+dir="$(cd "$(dirname "$0")" && pwd)"
+export ANDROID_ROOT="${ANDROID_ROOT:-/system}"
+export TERMUX_VERSION="${TERMUX_VERSION:-opencode-termux}"
+export TMPDIR="${OPENCODE_TMPDIR:-${HOME:-/data/data/com.termux/files/home}/.opencode-next/tmp}"
+export TEMP="$TMPDIR"
+export TMP="$TMPDIR"
+export OPENCODE_DISABLE_TUI_AUDIO="${OPENCODE_DISABLE_TUI_AUDIO:-1}"
+
+# Isolated XDG roots. OpenCode resolves data/config/cache/state via
+# xdg-basedir, which honors these env vars.
+for d in "$HOME/.opencode-next/share" "$HOME/.opencode-next/config" \
+         "$HOME/.opencode-next/cache" "$HOME/.opencode-next/state" "$TMPDIR"; do
+    mkdir -p "$d" 2>/dev/null || true
+done
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.opencode-next/share}"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.opencode-next/config}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.opencode-next/cache}"
+export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.opencode-next/state}"
+
+# Locate the native libraries shipped next to this wrapper (flat layout) or in
+# a sibling lib/ directory (package-style layout).
+NATIVE_LIB_DIR=""
+for candidate in \
+    "$dir/../lib" \
+    "$dir"
+do
+    if [ -f "$candidate/libtagfix.so" ]; then
+        NATIVE_LIB_DIR="$candidate"
+        break
+    fi
+done
+
+if [ -n "$NATIVE_LIB_DIR" ]; then
+    export LD_PRELOAD="${NATIVE_LIB_DIR}/libtagfix.so${LD_PRELOAD:+:$LD_PRELOAD}"
+    export LD_LIBRARY_PATH="${NATIVE_LIB_DIR}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export OPENTUI_LIB_PATH="${NATIVE_LIB_DIR}/libopentui.so"
+    if [ -f "${NATIVE_LIB_DIR}/librust_pty_arm64.so" ]; then
+        export BUN_PTY_LIB="${NATIVE_LIB_DIR}/librust_pty_arm64.so"
+    fi
+    export OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER="${OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER:-true}"
+    if [ -x "$NATIVE_LIB_DIR/bun" ]; then
+        export OPENCODE_BUN_PATH="$NATIVE_LIB_DIR/bun"
+    fi
+else
+    echo "opencode-next: warning: native library directory not found, may crash on Android 11+" >&2
+fi
+
+for candidate in \
+    "$dir/opencode-next.bin" \
+    "$dir/../libexec/opencode/opencode-next.bin"
+do
+    if [ -x "$candidate" ]; then
+        # BUN_SELF_EXE keeps standalone detection working under libtermux-exec
+        # (see bin/opencode for the full rationale).
+        export BUN_SELF_EXE="$candidate"
+        exec "$candidate" "$@"
+    fi
+done
+
+echo "opencode-next: error: could not find opencode-next.bin" >&2
+exit 127
