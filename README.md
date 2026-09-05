@@ -2,6 +2,9 @@
 
 Build system for cross-compiling [OpenCode](https://github.com/anomalyco/opencode) to run natively on Android devices via [Termux](https://termux.dev/).
 
+> Upgrading an existing 1.17.x install? See [UPGRADE.md](UPGRADE.md) for the
+> side-by-side `opencode-next` test-install procedure.
+
 OpenCode is an AI-powered coding assistant for the terminal. It uses [Bun](https://bun.sh/) as its JavaScript runtime and compiles to a standalone binary via `bun build --compile`. Since Bun has no official Android support ([marked "not planned"](https://github.com/oven-sh/bun/issues/9)), this project cross-compiles Bun itself from source for Android/aarch64, including the full WebKit/JavaScriptCore engine.
 
 ## Install (Termux)
