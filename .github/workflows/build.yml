@@ -10,6 +10,10 @@ on:
         description: 'OpenCode version to build'
         required: false
         default: '1.18.27'
+      opencode_v2_ref:
+        description: 'OpenCode v2 git ref to build (build-v2 job)'
+        required: false
+        default: 'v2.0.18'
       create_prerelease:
         description: 'Create a GitHub pre-release with the built artifacts'
         required: false
@@ -477,3 +481,218 @@ jobs:
           rm -rf "${WORK_DIR}/bun-build/cache/zig"
           echo "Cleaned up intermediate files"
           df -h "$WORK_DIR"
+
+  build-v2:
+    name: Build opencode2 (v2 line) Android aarch64
+    # The v2 line needs NO Bun/WebKit rebuild — the official
+    # `bun build --target=opencode2-linux-arm64-android` with the official
+    # host Bun 1.4.2 produces the Android binary directly. So this job runs
+    # on a plain GitHub-hosted runner with a slim toolchain: NDK r28b +
+    # Zig 0.16.0 + official Bun 1.4.2 + system deps (no Rust/Go/CMake/WebKit).
+    # (Upstream v1.0.x has no v2 CI job — their releases were built
+    # manually; this job is what they lack.)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write   # required to create GitHub Releases
+      actions: write    # required for actions/cache save/restore and upload-artifact
+
+    env:
+      BUN_VERSION: "1.4.2"
+      OPENTUI_VERSION: "0.5.10"
+      OPENCODE_V2_REF: "v2.0.18"
+      OPENCODE_V2_PKGVER: "2.0.18"
+      ZIG_V2_VERSION: "0.16.0"
+      ANDROID_API: "24"
+      ANDROID_NDK_VERSION: "28.1.13356709"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Override OpenCode v2 ref from input
+        if: github.event.inputs.opencode_v2_ref
+        run: echo "OPENCODE_V2_REF=${{ github.event.inputs.opencode_v2_ref }}" >> $GITHUB_ENV
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ninja-build python3 \
+            git curl unzip zip \
+            patchelf
+
+      - name: Install Android NDK r28b
+        run: |
+          NDK_DIR="/opt/android-ndk"
+          if [ -d "$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64" ]; then
+            echo "NDK already installed at $NDK_DIR"
+          else
+            echo "Downloading Android NDK r28b..."
+            cd /tmp
+            wget -q "https://dl.google.com/android/repository/android-ndk-r28b-linux.zip" -O ndk.zip
+            sudo mkdir -p /opt
+            sudo unzip -q ndk.zip -d /opt/
+            sudo mv /opt/android-ndk-r28b "$NDK_DIR"
+            rm ndk.zip
+          fi
+          echo "ANDROID_NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
+          echo "$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin" >> $GITHUB_PATH
+
+      - name: Install Zig 0.16.0 (v2 line)
+        run: |
+          ZIG_DIR="$HOME/zig-${ZIG_V2_VERSION}"
+          if [ -x "$ZIG_DIR/zig" ]; then
+            echo "Zig already installed at $ZIG_DIR"
+          else
+            echo "Downloading Zig ${ZIG_V2_VERSION}..."
+            cd /tmp
+            wget -q "https://ziglang.org/download/${ZIG_V2_VERSION}/zig-x86_64-linux-${ZIG_V2_VERSION}.tar.xz" -O zig.tar.xz
+            mkdir -p "$ZIG_DIR"
+            tar xf zig.tar.xz -C "$ZIG_DIR" --strip-components=1
+            rm zig.tar.xz
+          fi
+          echo "ZIG_BIN=$ZIG_DIR/zig" >> $GITHUB_ENV
+          echo "$ZIG_DIR" >> $GITHUB_PATH
+
+      - name: Install Bun 1.4.2 (host and target)
+        run: |
+          # The v2 line uses the official Bun release for BOTH host and
+          # target — no patched Bun rebuild. Host and target share the same
+          # module graph format, so no module-graph surgery is needed either.
+          GOT="$(bun --version 2>/dev/null || true)"
+          if [ "$GOT" != "$BUN_VERSION" ]; then
+            echo "Installing Bun v${BUN_VERSION} (current: ${GOT:-none})..."
+            curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}"
+            echo "$HOME/.bun/bin" >> $GITHUB_PATH
+            export PATH="$HOME/.bun/bin:$PATH"
+          fi
+          echo "Bun version: $(bun --version)"
+
+      - name: Build libopentui.so (v2)
+        run: |
+          source scripts/env-v2.sh
+          ./scripts/build-opentui-v2.sh
+
+      - name: Build opencode2 standalone binary
+        run: |
+          source scripts/env-v2.sh
+          ./scripts/build-opencode2.sh
+
+      - name: Verify opencode2 binary
+        run: |
+          source scripts/env-v2.sh
+          OPENCODE2_BINARY="${DIST_DIR}/opencode2.bin"
+          echo "opencode2 binary: $OPENCODE2_BINARY"
+          ls -lh "$OPENCODE2_BINARY"
+          file "$OPENCODE2_BINARY"
+          readelf -h "$OPENCODE2_BINARY" | grep -E "Machine|Class"
+
+      - name: Create distribution packages
+        run: |
+          source scripts/env-v2.sh
+          ./scripts/make-packages-v2.sh
+
+      - name: List packages
+        run: |
+          source scripts/env-v2.sh
+          echo "=== Built packages ==="
+          ls -lh "${PACKAGE_DIR}/"
+
+      - name: Upload packages as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencode2-termux-${{ env.OPENCODE_V2_REF }}
+          path: |
+            build-v2/packages/*.zip
+            build-v2/packages/*.pkg.tar.xz
+            build-v2/packages/*.deb
+
+      - name: Resolve release metadata
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_prerelease)
+        run: |
+          source scripts/env-v2.sh
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME}"
+            prerelease="false"
+            case "$tag" in
+              *-*) prerelease="true" ;;
+            esac
+          else
+            if [ -n "${{ inputs.release_tag }}" ]; then
+              tag="${{ inputs.release_tag }}"
+            else
+              tag="v2-${OPENCODE_V2_PKGVER}-android15-ci${GITHUB_RUN_NUMBER}"
+            fi
+            prerelease="true"
+          fi
+          echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
+          echo "RELEASE_PRERELEASE=$prerelease" >> "$GITHUB_ENV"
+          echo "Release tag: $tag"
+          echo "Pre-release: $prerelease"
+
+      - name: Create GitHub Release (opencode2)
+        if: env.RELEASE_TAG != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
+          files: |
+            build-v2/packages/*.zip
+            build-v2/packages/*.pkg.tar.xz
+            build-v2/packages/*.deb
+          body: |
+            ## opencode2 ${{ env.OPENCODE_V2_REF }} for Android/Termux (aarch64)
+
+            Side-by-side install with the v1 `opencode` package — v2 files live
+            under `bin/opencode2` and `libexec/opencode2/` and never replace v1.
+
+            ### Installation
+
+            **Termux (pacman):**
+            ```bash
+            # Download the opencode2 .pkg.tar.xz file, then:
+            pacman -U opencode2-${{ env.OPENCODE_V2_PKGVER }}-1-aarch64.pkg.tar.xz
+            opencode2 --version
+            ```
+
+            **Termux (dpkg):**
+            ```bash
+            # Download the opencode2 .deb file, then:
+            dpkg -i opencode2_${{ env.OPENCODE_V2_PKGVER }}_aarch64.deb
+            opencode2 --version
+            ```
+
+            **Standalone binary (zip):**
+            ```bash
+            # The zip contains bin/opencode2 + libexec/opencode2/opencode2.bin +
+            # libtagfix.so + libopentui.so (flat layout; the wrapper resolves
+            # siblings via its own dir):
+            unzip opencode2-${{ env.OPENCODE_V2_PKGVER }}-android-aarch64.zip -d $PREFIX/bin/
+            chmod +x $PREFIX/bin/opencode2 $PREFIX/bin/opencode2.bin
+            opencode2 --version
+            ```
+
+            ### Notes
+            - First v2 start auto-creates `~/.config/opencode/cli.json` from
+              `tui.json` (auto-migration; no native-V2 rewrite needed).
+            - WARNING: v1 plugins do NOT run on v2; server API callers must be
+              ported (no auto-port).
+
+            ### Build info
+            - Bun: v${{ env.BUN_VERSION }} (official release, host and target)
+            - OpenTUI: v${{ env.OPENTUI_VERSION }}
+            - Android API level: ${{ env.ANDROID_API }}
+            - NDK: r28b (${{ env.ANDROID_NDK_VERSION }})
+            - Zig: v${{ env.ZIG_V2_VERSION }}
+            - OpenCode ref: ${{ env.OPENCODE_V2_REF }}
+          draft: false
+          prerelease: ${{ env.RELEASE_PRERELEASE }}
+
+      - name: Cleanup intermediate files
+        if: always()
+        run: |
+          # Remove v2 source trees (they can be re-cloned); keep dist + packages
+          rm -rf "build-v2/opentui-v2-src" "build-v2/opencode-v2-src"
+          echo "Cleaned up intermediate files"
+          df -h .

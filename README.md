@@ -1,5 +1,11 @@
 # OpenCode for Termux (Android aarch64)
 
+> **Maintained fork** by [Konaimav2](https://github.com/Konaimav2/opencode-termux),
+> based on [guysoft/opencode-termux](https://github.com/guysoft/opencode-termux).
+> This fork currently ships **OpenCode 1.18.27** (OpenTUI 0.4.5) with additional
+> Android runtime fixes — see [UPGRADE.md](UPGRADE.md) and
+> [RELEASE_v0.3.0_PREVIEW.md](RELEASE_v0.3.0_PREVIEW.md).
+
 Build system for cross-compiling [OpenCode](https://github.com/anomalyco/opencode) to run natively on Android devices via [Termux](https://termux.dev/).
 
 > Upgrading an existing 1.17.x install? See [UPGRADE.md](UPGRADE.md) for the
@@ -9,7 +15,42 @@ OpenCode is an AI-powered coding assistant for the terminal. It uses [Bun](https
 
 ## Install (Termux)
 
-### Option 1: Standalone binary (easiest)
+### Default: opencode2 (V2 line, 2.0.18)
+
+```bash
+# On-device installer (side-by-side with v1; backs up configs first):
+curl -LO https://github.com/Konaimav2/opencode-termux/raw/feature/opencode2/scripts/install-opencode2.sh
+bash install-opencode2.sh
+opencode2 --version
+```
+
+Or install a package manually:
+
+```bash
+curl -LO https://github.com/Konaimav2/opencode-termux/releases/latest/download/opencode2-2.0.18-1-aarch64.pkg.tar.xz
+pacman -U opencode2-*-aarch64.pkg.tar.xz
+opencode2 --version
+```
+
+```bash
+curl -LO https://github.com/Konaimav2/opencode-termux/releases/latest/download/opencode2_2.0.18_aarch64.deb
+dpkg -i opencode2_*_aarch64.deb
+opencode2 --version
+```
+
+```bash
+# Standalone zip (flat layout; the wrapper resolves siblings via its own dir):
+unzip opencode2-2.0.18-android-aarch64.zip -d $PREFIX/bin/
+chmod +x $PREFIX/bin/opencode2 $PREFIX/bin/opencode2.bin
+opencode2 --version
+```
+
+> First v2 start auto-creates `~/.config/opencode/cli.json` from `tui.json`.
+> WARNING: v1 plugins do NOT run on v2; server API callers must be ported.
+
+### Legacy v1 line (opencode 1.18.27)
+
+#### Option 1: Standalone binary
 
 > **Note:** The zip now contains a wrapper script (`opencode`), the main binary
 > (`opencode.bin`), and native libraries (`.so` files). All files must be
@@ -17,7 +58,7 @@ OpenCode is an AI-powered coding assistant for the terminal. It uses [Bun](https
 
 ```bash
 # Download the latest "opencode-*-android-aarch64.zip" from
-#   https://github.com/guysoft/opencode-termux/releases/latest
+#   https://github.com/Konaimav2/opencode-termux/releases/latest
 # Then install:
 
 mkdir -p $PREFIX/libexec/opencode $PREFIX/lib
@@ -35,18 +76,18 @@ pkg install ripgrep
 opencode
 ```
 
-### Option 2: Pacman package (recommended if using pacman)
+#### Option 2: Pacman package (recommended if using pacman)
 
 ```bash
-curl -LO https://github.com/guysoft/opencode-termux/releases/latest/download/opencode-aarch64.pkg.tar.xz
+curl -LO https://github.com/Konaimav2/opencode-termux/releases/latest/download/opencode-1.18.27-1-aarch64.pkg.tar.xz
 pacman -U opencode-*-aarch64.pkg.tar.xz
 opencode
 ```
 
-### Option 3: Deb package
+#### Option 3: Deb package
 
 ```bash
-curl -LO https://github.com/guysoft/opencode-termux/releases/latest/download/opencode-aarch64.deb
+curl -LO https://github.com/Konaimav2/opencode-termux/releases/latest/download/opencode_1.18.27_aarch64.deb
 dpkg -i opencode-*-aarch64.deb
 opencode
 ```
@@ -91,6 +132,11 @@ opencode-termux/
     build-opentui.sh               # Build libopentui.so for Android
     build-opencode.sh              # Build OpenCode standalone binary
     make-packages.sh               # Create zip, pacman, and deb packages
+    env-v2.sh                      # V2 line env (Bun 1.4.2 / OpenTUI 0.5.10 / opencode v2.0.18)
+    build-opentui-v2.sh            # Build libopentui.so for Android (v2 line)
+    build-opencode2.sh             # Build opencode2 binary via official bun target (v2 line)
+    make-packages-v2.sh            # Create opencode2 zip, pacman, and deb packages
+    install-opencode2.sh           # On-device side-by-side opencode2 installer
     build-opencode-android.ts      # TypeScript helper (module graph extraction)
   cmake/
     webkit-android-toolchain.cmake # WebKit CMake cross-compilation toolchain
