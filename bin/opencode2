@@ -1,17 +1,23 @@
 #!/data/data/com.termux/files/usr/bin/sh
-# opencode2 — wrapper for the OpenCode v2 CLI on Android/Termux.
+# opencode (v2) — wrapper for the OpenCode v2 CLI on Android/Termux.
 #
-# Derived from the upstream opencode2 wrapper plus our bin/opencode tweaks:
+# Repo source file is bin/opencode2 (bin/opencode stays the V1 wrapper so the
+# v1 line keeps building). This wrapper is INSTALLED as bin/opencode: v2 takes
+# over the `opencode` command via a normal package upgrade (pacman -U /
+# dpkg -i over v1 1.x; version 2.0.18 > 1.18.27).
+#
+# Derived from the upstream opencode wrapper plus our bin/opencode tweaks:
 # LD_PRELOAD libtagfix.so (disables Android bionic TBI heap tagging — without
 # it Bun/JSC NaN-boxing clears the top-byte tag on heap pointers and bionic
 # SIGABRTs on free(): "Pointer tag ... was truncated"), BUN_SELF_EXE (so the
 # standalone loader finds its module graph under libtermux-exec), a TMPDIR
-# default, and the @parcel/watcher filewatcher guard. Installs side by side
-# with the v1 "opencode" package: v2 files live under libexec/opencode2/.
+# default, and the @parcel/watcher filewatcher guard. Takes over the v1
+# "opencode" command: installed files are bin/opencode and
+# libexec/opencode/ (v1's lib/libopentui.so stays behind as an orphan).
 #
 # Path resolution order (supports both standalone zip and installed package):
-#   zip:       opencode2, opencode2.bin, libtagfix.so, libopentui.so in one dir
-#   installed: bin/opencode2, libexec/opencode2/{opencode2.bin,libtagfix.so,libopentui.so}
+#   zip:       opencode, opencode.bin, libtagfix.so, libopentui.so in one dir
+#   installed: bin/opencode, libexec/opencode/{opencode.bin,libtagfix.so,libopentui.so}
 
 set -eu
 
@@ -31,10 +37,10 @@ export TMP="$TMPDIR"
 mkdir -p "$TMPDIR" 2>/dev/null || true
 
 # Locate the native library directory. Prefer the private installed package
-# layout (libexec/opencode2) over the flat zip layout (libs next to the
+# layout (libexec/opencode) over the flat zip layout (libs next to the
 # wrapper), so upgrades never pick up a stale flat-layout library.
 NATIVE_LIB_DIR=""
-for candidate in "$DIR/../libexec/opencode2" "$PREFIX/libexec/opencode2" "$DIR"; do
+for candidate in "$DIR/../libexec/opencode" "$PREFIX/libexec/opencode" "$DIR"; do
     if [ -f "$candidate/libopentui.so" ]; then
         NATIVE_LIB_DIR="$candidate"
         break
@@ -43,7 +49,7 @@ done
 
 if [ -n "$NATIVE_LIB_DIR" ]; then
     # libtagfix.so: LD_PRELOAD constructor calls mallopt to turn off heap
-    # tagging inside the opencode2 process (execv-based wrappers cannot do
+    # tagging inside the opencode process (execv-based wrappers cannot do
     # this because execv resets the tagging level on the new image).
     if [ -f "$NATIVE_LIB_DIR/libtagfix.so" ]; then
         export LD_PRELOAD="$NATIVE_LIB_DIR/libtagfix.so${LD_PRELOAD:+:$LD_PRELOAD}"
@@ -56,27 +62,27 @@ if [ -n "$NATIVE_LIB_DIR" ]; then
     # @parcel/watcher only bundles a host-arch native binding in this build;
     # disable it on Android/Termux to avoid a dlopen architecture mismatch.
     export OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER="${OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER:-true}"
-    # If a real Bun binary is shipped next to opencode2, use it for plugin installs.
+    # If a real Bun binary is shipped next to opencode, use it for plugin installs.
     if [ -x "$NATIVE_LIB_DIR/bun" ]; then
         export OPENCODE_BUN_PATH="$NATIVE_LIB_DIR/bun"
     fi
 else
-    echo "opencode2: warning: native library directory not found, may crash on Android 11+" >&2
+    echo "opencode: warning: native library directory not found, may crash on Android 11+" >&2
 fi
 
 # Tell Bun's standalone loader exactly which file holds the embedded module
 # graph. On Termux, libtermux-exec rewrites this exec to
-# `/system/bin/linker64 <opencode2.bin>`, which makes /proc/self/exe point at
-# the linker instead of opencode2.bin. BUN_SELF_EXE (checked before
+# `/system/bin/linker64 <opencode.bin>`, which makes /proc/self/exe point at
+# the linker instead of opencode.bin. BUN_SELF_EXE (checked before
 # /proc/self/exe by our Bun patch) overrides that so Bun finds its
 # "---- Bun! ----" trailer and runs the embedded OpenCode v2 JS.
 #
-# Locate opencode2.bin. Prefer the installed package layout first so upgrades
+# Locate opencode.bin. Prefer the installed package layout first so upgrades
 # do not accidentally execute a stale flat-layout binary.
 for candidate in \
-    "$DIR/../libexec/opencode2/opencode2.bin" \
-    "$PREFIX/libexec/opencode2/opencode2.bin" \
-    "$DIR/opencode2.bin"
+    "$DIR/../libexec/opencode/opencode.bin" \
+    "$PREFIX/libexec/opencode/opencode.bin" \
+    "$DIR/opencode.bin"
 do
     if [ -x "$candidate" ]; then
         export BUN_SELF_EXE="$candidate"
@@ -84,5 +90,5 @@ do
     fi
 done
 
-echo "opencode2: error: could not find opencode2.bin" >&2
+echo "opencode: error: could not find opencode.bin" >&2
 exit 127

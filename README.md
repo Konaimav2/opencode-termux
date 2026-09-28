@@ -15,34 +15,34 @@ OpenCode is an AI-powered coding assistant for the terminal. It uses [Bun](https
 
 ## Install (Termux)
 
-### Default: opencode2 (V2 line, 2.0.18)
+### Default: opencode 2.x (V2 line, 2.0.18 — takes over the `opencode` command)
 
 ```bash
-# On-device installer (side-by-side with v1; backs up configs first):
+# On-device installer (upgrades v1 in place; backs up configs first):
 curl -LO https://github.com/Konaimav2/opencode-termux/raw/feature/opencode2/scripts/install-opencode2.sh
 bash install-opencode2.sh
-opencode2 --version
+opencode --version   # expect 2.x
 ```
 
-Or install a package manually:
+Or install a package manually (2.0.18 > 1.18.27, so this upgrades v1):
 
 ```bash
-curl -LO https://github.com/Konaimav2/opencode-termux/releases/latest/download/opencode2-2.0.18-1-aarch64.pkg.tar.xz
-pacman -U opencode2-*-aarch64.pkg.tar.xz
-opencode2 --version
+curl -LO https://github.com/Konaimav2/opencode-termux/releases/latest/download/opencode-2.0.18-1-aarch64.pkg.tar.xz
+pacman -U opencode-*-aarch64.pkg.tar.xz
+opencode --version
 ```
 
 ```bash
-curl -LO https://github.com/Konaimav2/opencode-termux/releases/latest/download/opencode2_2.0.18_aarch64.deb
-dpkg -i opencode2_*_aarch64.deb
-opencode2 --version
+curl -LO https://github.com/Konaimav2/opencode-termux/releases/latest/download/opencode_2.0.18_aarch64.deb
+dpkg -i opencode_*_aarch64.deb
+opencode --version
 ```
 
 ```bash
 # Standalone zip (flat layout; the wrapper resolves siblings via its own dir):
-unzip opencode2-2.0.18-android-aarch64.zip -d $PREFIX/bin/
-chmod +x $PREFIX/bin/opencode2 $PREFIX/bin/opencode2.bin
-opencode2 --version
+unzip opencode-2.0.18-android-aarch64.zip -d $PREFIX/bin/
+chmod +x $PREFIX/bin/opencode $PREFIX/bin/opencode.bin
+opencode --version
 ```
 
 > First v2 start auto-creates `~/.config/opencode/cli.json` from `tui.json`.

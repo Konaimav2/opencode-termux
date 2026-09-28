@@ -1,23 +1,26 @@
 #!/usr/bin/env bash
-# install-opencode2.sh - Side-by-side on-device installer for opencode2 (V2 line).
+# install-opencode2.sh - On-device installer: V2 takes over the `opencode` command.
 # Fork: Konaimav2/opencode-termux. On-device Termux bash (requires bash: pipefail/PIPESTATUS).
 # Needs: curl unzip python3, plus dpkg and/or pacman for package install.
 #
-# Side-by-side, NON-destructive: installs bin/opencode2 + libexec/opencode2/
-# next to the v1 "opencode" package. NO replace, NO promote, NO destructive
-# ops at all — no rm -rf except this script's own scratch dir on failure.
+# TAKEOVER upgrade: installs package `opencode` 2.x, which REPLACES the v1
+# files bin/opencode + libexec/opencode/opencode.bin in place
+# (2.0.18 > 1.18.27, so pacman -U / dpkg -i upgrade cleanly). Configs,
+# sessions and auth are shared locations — nothing is deleted except a
+# stray bin/opencode->opencode2 symlink (backed up first).
 #
 # Steps: preflight (aarch64, Termux, disk 300MB, curl/unzip) -> backup
-# existing v1+v2 configs (timestamped dir, copy-only incl auth.json 0600,
-# filenames-only manifest) -> resolve release (--ref default latest, GitHub
-# API + python3, pick opencode2 zip+deb+pkg assets, SHA256SUMS verify when
-# present, graceful fail otherwise) -> install (prefer dpkg -i / pacman -U
-# package when available, else flat-zip into $PREFIX) -> verify
-# (opencode2 --version + --help, local-only; live model smoke ONLY with
-# --test-live-model) -> cli.json auto-migration note + V1-plugin warning.
+# existing configs + current bin/opencode (file or symlink, copy-only incl
+# auth.json 0600, filenames-only manifest) -> resolve release (--ref default
+# latest, GitHub API + python3, pick opencode-2.x zip+deb+pkg assets,
+# SHA256SUMS verify when present, graceful fail otherwise) -> install
+# (prefer dpkg -i / pacman -U package when available, else flat-zip into
+# $PREFIX) -> verify (opencode --version 2.x + --help, local-only; live
+# model smoke ONLY with --test-live-model) -> cli.json auto-migration note
+# + V1-plugin warning.
 #
 # Style: bin/opencode2 wrapper resolution, scripts/upgrade-v1-to-v2.sh
-# redaction/log patterns (read-only reference; nothing is moved or deleted).
+# redaction/log patterns (read-only reference).
 set -euo pipefail
 REPO="Konaimav2/opencode-termux"
 DRY_RUN=0
@@ -34,17 +37,18 @@ for _a in "$@"; do
 Usage: install-opencode2.sh [--dry-run] [--test-live-model] [--ref REV] [--keep-backup] [--help]
   --help            Show this help (no side effects).
   --dry-run         Print planned actions only; change nothing.
-  --test-live-model Also run a live model smoke (opencode2 run "say hi", costs tokens).
+  --test-live-model Also run a live model smoke (opencode run "say hi", costs tokens).
                     Default OFF: verify is local-only (--version + --help).
   --ref REV         Release tag to use (default: latest = resolve at runtime via GitHub API).
   --keep-backup     Disable pruning of backups older than 14 days (prune never
                     touches the current backup).
-Side-by-side (nothing is replaced or removed):
-  v1: bin/opencode + libexec/opencode/ (+ lib/libtagfix.so, lib/libopentui.so)
-  v2: bin/opencode2 + libexec/opencode2/ (wrapper, opencode2.bin, libtagfix.so, libopentui.so)
-  Both share ~/.config/opencode/ (first V2 start auto-creates cli.json from tui.json).
+Takeover (v2 replaces the v1 `opencode` command in place):
+  before: bin/opencode + libexec/opencode/ (v1 1.x)
+  after:  bin/opencode + libexec/opencode/ (v2 2.x; renderer private inside)
+  A stray bin/opencode->opencode2 symlink is removed first (backed up).
+  Configs/sessions/auth (shared locations) are never deleted.
 Rollback: backups live in ~/opencode2-backup-<TS>/ (see MANIFEST.txt; filenames
-  only, no secrets). Reinstall the prior artifact from the previous GitHub
+  only, no secrets). Reinstall the prior v1 artifact from the previous GitHub
   release, then copy configs back (chmod 0600 auth.json after restore).
   WARNING: inspecting auth.json on screen may expose secrets; do not paste
   them into chats/logs.
@@ -112,11 +116,11 @@ V2_PIN="$(opencode2 --version 2>/dev/null | head -n1 || echo none)"
 result "existing v1: $V1_PIN / existing v2: $V2_PIN"
 printf 'V1_PIN=%s\nV2_PIN=%s\nDATE=%s\nREF=%s\n' "$V1_PIN" "$V2_PIN" "$TS" "$REF" >> "$LOGFILE"
 if [ "$DRY_RUN" -eq 1 ]; then
-  log "STEP" "[dry-run] would backup to $BACKUP_DIR (v1+v2 configs copy-only: opencode.json/tui.json/cli.json, auth.json 0600, existing opencode2 install snapshot; 0700 dir; filenames-only MANIFEST.txt)"
-  log "STEP" "[dry-run] would resolve ${REF} via api.github.com/repos/${REPO}/releases, pick opencode2 zip+deb+pkg assets (+SHA256SUMS best-effort verify)"
-  log "STEP" "[dry-run] would download to ~ (keep for rollback), size>10MB, unzip -l lists opencode2+opencode2.bin+.so"
-  log "STEP" "[dry-run] would install side-by-side (nothing replaced/removed): prefer pacman -U <pkg.tar.xz> or dpkg -i <deb>; else flat-zip into \$PREFIX (bin/opencode2 + libexec/opencode2/)"
-  log "STEP" "[dry-run] would verify local-only: opencode2 --version (2.x) + --help, cli.json auto-migration note, rg note (live model smoke only with --test-live-model)"
+  log "STEP" "[dry-run] would backup to $BACKUP_DIR (configs copy-only: opencode.json/tui.json/cli.json, auth.json 0600, current bin/opencode file-or-symlink + libexec/opencode/ snapshot; 0700 dir; filenames-only MANIFEST.txt)"
+  log "STEP" "[dry-run] would resolve ${REF} via api.github.com/repos/${REPO}/releases, pick opencode-2.x zip+deb+pkg assets (+SHA256SUMS best-effort verify)"
+  log "STEP" "[dry-run] would download to ~ (keep for rollback), size>10MB, unzip -l lists opencode+opencode.bin+.so"
+  log "STEP" "[dry-run] would remove a stray bin/opencode->opencode2 symlink if present (backed up), then upgrade in place: prefer pacman -U <pkg.tar.xz> or dpkg -i <deb>; else flat-zip into \$PREFIX (bin/opencode + libexec/opencode/)"
+  log "STEP" "[dry-run] would verify local-only: opencode --version (2.x) + --help, cli.json auto-migration note, rg note (live model smoke only with --test-live-model)"
   log "STEP" "[dry-run] WARN: V1 plugins do NOT run on V2; server API callers must be ported (no auto-port)"
   usage; echo "Log: $LOGFILE"; SCRATCH_OK=1; exit 0
 fi
@@ -132,9 +136,14 @@ printf '%s\n' "v1=$V1_PIN" > "$BACKUP_DIR/versions.txt"
 printf '%s\n' "v2=$V2_PIN" >> "$BACKUP_DIR/versions.txt"
 if [ -n "${PREFIX:-}" ]; then
   mkdir -p "$BACKUP_DIR/prefix-snapshot" 2>/dev/null || true
-  [ -f "$PREFIX/bin/opencode2" ] && cp "$PREFIX/bin/opencode2" "$BACKUP_DIR/prefix-snapshot/" && N=$((N+1))
-  for f in opencode2.bin libtagfix.so libopentui.so; do
-    [ -f "$PREFIX/libexec/opencode2/$f" ] && cp "$PREFIX/libexec/opencode2/$f" "$BACKUP_DIR/prefix-snapshot/" && N=$((N+1))
+  if [ -L "$PREFIX/bin/opencode" ]; then
+    readlink "$PREFIX/bin/opencode" > "$BACKUP_DIR/prefix-snapshot/opencode.symlink-target.txt" 2>/dev/null || true
+    cp -P "$PREFIX/bin/opencode" "$BACKUP_DIR/prefix-snapshot/" && N=$((N+1))
+  elif [ -f "$PREFIX/bin/opencode" ]; then
+    cp "$PREFIX/bin/opencode" "$BACKUP_DIR/prefix-snapshot/" && N=$((N+1))
+  fi
+  for f in opencode.bin libtagfix.so libopentui.so; do
+    [ -f "$PREFIX/libexec/opencode/$f" ] && cp "$PREFIX/libexec/opencode/$f" "$BACKUP_DIR/prefix-snapshot/" && N=$((N+1))
   done
 fi
 ls -la "$BACKUP_DIR" > "$BACKUP_DIR/MANIFEST.txt" 2>&1
@@ -143,13 +152,13 @@ step "resolve release ref=$REF"
 if [ "$REF" = "latest" ]; then API="https://api.github.com/repos/${REPO}/releases/latest";
 else API="https://api.github.com/repos/${REPO}/releases/tags/${REF}"; fi
 JSON="$SCRATCH/opencode2-rel-${TS}.json"
-curl -fsSL "$API" -o "$JSON" || fail "GitHub API failed ($API). If no opencode2 Android asset is published yet, CI must publish first."
+curl -fsSL "$API" -o "$JSON" || fail "GitHub API failed ($API). If no opencode 2.x Android asset is published yet, CI must publish first."
 TAG="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("tag_name",""))' "$JSON")"
 [ -n "$TAG" ] || fail "could not parse tag_name from release JSON"
-ZIP_URL="$(python3 -c 'import json,sys; a=json.load(open(sys.argv[1])).get("assets",[]); print("\n".join(x.get("browser_download_url","") for x in a))' "$JSON" | grep -E 'opencode2-.*-android-aarch64\.zip$' | head -n1 || true)"
-DEB_URL="$(python3 -c 'import json,sys; a=json.load(open(sys.argv[1])).get("assets",[]); print("\n".join(x.get("browser_download_url","") for x in a))' "$JSON" | grep -E 'opencode2_.*_aarch64\.deb$' | head -n1 || true)"
-PKG_URL="$(python3 -c 'import json,sys; a=json.load(open(sys.argv[1])).get("assets",[]); print("\n".join(x.get("browser_download_url","") for x in a))' "$JSON" | grep -E 'opencode2-.*-aarch64\.pkg\.tar\.xz$' | head -n1 || true)"
-[ -n "$ZIP_URL" ] || fail "no opencode2 Android zip asset in $TAG yet (CI must publish first). Assets seen: $(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1])).get("assets",[])))' "$JSON")"
+ZIP_URL="$(python3 -c 'import json,sys; a=json.load(open(sys.argv[1])).get("assets",[]); print("\n".join(x.get("browser_download_url","") for x in a))' "$JSON" | grep -E 'opencode-2[0-9.]*-android-aarch64\.zip$' | head -n1 || true)"
+DEB_URL="$(python3 -c 'import json,sys; a=json.load(open(sys.argv[1])).get("assets",[]); print("\n".join(x.get("browser_download_url","") for x in a))' "$JSON" | grep -E 'opencode_2[0-9.]*_aarch64\.deb$' | head -n1 || true)"
+PKG_URL="$(python3 -c 'import json,sys; a=json.load(open(sys.argv[1])).get("assets",[]); print("\n".join(x.get("browser_download_url","") for x in a))' "$JSON" | grep -E 'opencode-2[0-9.]*-aarch64\.pkg\.tar\.xz$' | head -n1 || true)"
+[ -n "$ZIP_URL" ] || fail "no opencode 2.x Android zip asset in $TAG yet (CI must publish first). Assets seen: $(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1])).get("assets",[])))' "$JSON")"
 result "tag=$TAG zip=$(basename "$ZIP_URL")"
 step "download (keep artifacts for rollback)"
 ZIPFILE="${HOME_DIR}/$(basename "$ZIP_URL")"
@@ -160,8 +169,8 @@ DEBFILE=""; PKGFILE=""
 SZ="$(wc -c < "$ZIPFILE" | tr -d ' ')"
 [ "$SZ" -gt 10485760 ] || { rm -f "$ZIPFILE"; fail "zip too small (${SZ}B); expected >10MB (removed, re-run to re-download)"; }
 unzip -l "$ZIPFILE" 2>/dev/null | redact > "$SCRATCH/ziplist-${TS}.txt"
-grep -q 'opencode2$' "$SCRATCH/ziplist-${TS}.txt" || fail "zip missing wrapper 'opencode2'"
-grep -q 'opencode2\.bin' "$SCRATCH/ziplist-${TS}.txt" || fail "zip missing opencode2.bin"
+grep -qE '(^|/)opencode$' "$SCRATCH/ziplist-${TS}.txt" || fail "zip missing wrapper 'opencode'"
+grep -q 'opencode\.bin' "$SCRATCH/ziplist-${TS}.txt" || fail "zip missing opencode.bin"
 grep -q '\.so' "$SCRATCH/ziplist-${TS}.txt" || fail "zip missing .so libs"
 cat "$SCRATCH/ziplist-${TS}.txt" >> "$LOGFILE"
 result "zip ok (${SZ}B) -> $ZIPFILE"
@@ -173,7 +182,11 @@ if [ -n "$SUM_URL" ]; then
 else log "RESULT" "NOTE: no SHA256SUMS asset in $TAG; verified by size+contents only"; fi
 [ -z "$DEB_URL" ] || { [ -f "$DEBFILE" ] || curl -fSL "$DEB_URL" -o "$DEBFILE" || log "RESULT" "WARN: deb download failed, package-via-deb unavailable"; }
 [ -z "$PKG_URL" ] || { [ -f "$PKGFILE" ] || curl -fSL "$PKG_URL" -o "$PKGFILE" || log "RESULT" "WARN: pkg download failed, package-via-pacman unavailable"; }
-step "install side-by-side (v1 untouched; nothing replaced or removed)"
+step "upgrade in place (configs/sessions/auth are shared locations; only a stray symlink is removed)"
+if [ -L "${PREFIX:-/nonexistent}/bin/opencode" ]; then
+  log "RESULT" "removing stray symlink $PREFIX/bin/opencode -> $(readlink "$PREFIX/bin/opencode") (backed up in $BACKUP_DIR/prefix-snapshot/)"
+  rm -f "$PREFIX/bin/opencode"
+fi
 INST=""
 if command -v pacman >/dev/null 2>&1 && [ -n "$PKGFILE" ] && [ -f "$PKGFILE" ]; then INST="pacman -U $PKGFILE";
 elif command -v dpkg >/dev/null 2>&1 && [ -n "$DEBFILE" ] && [ -f "$DEBFILE" ]; then INST="dpkg -i $DEBFILE";
@@ -187,24 +200,24 @@ if [ -n "$INST" ]; then
 else
   [ -n "${PREFIX:-}" ] || fail "no installable package downloaded and \$PREFIX unset; manual: pacman -U <pkg.tar.xz> OR dpkg -i <deb>"
   log "RESULT" "NOTE: no package manager path; flat-zip install into \$PREFIX"
-  mkdir -p "$PREFIX/bin" "$PREFIX/libexec/opencode2"
+  mkdir -p "$PREFIX/bin" "$PREFIX/libexec/opencode"
   unzip -o "$ZIPFILE" -d "$SCRATCH/flat" > "$SCRATCH/unzip-${TS}.txt" 2>&1; tail -n 5 "$SCRATCH/unzip-${TS}.txt" | redact >> "$LOGFILE" 2>&1
-  [ -f "$SCRATCH/flat/opencode2" ] || fail "extract missing wrapper 'opencode2'"
-  [ -f "$SCRATCH/flat/opencode2.bin" ] || fail "extract missing opencode2.bin"
-  cp "$SCRATCH/flat/opencode2" "$PREFIX/bin/opencode2"
-  cp "$SCRATCH/flat/opencode2.bin" "$PREFIX/libexec/opencode2/opencode2.bin"
-  for f in "$SCRATCH"/flat/*.so; do [ -f "$f" ] && cp "$f" "$PREFIX/libexec/opencode2/"; done
-  chmod +x "$PREFIX/bin/opencode2" "$PREFIX/libexec/opencode2/opencode2.bin"
-  result "flat-zip install done (bin/opencode2 + libexec/opencode2/)"
+  [ -f "$SCRATCH/flat/opencode" ] || fail "extract missing wrapper 'opencode'"
+  [ -f "$SCRATCH/flat/opencode.bin" ] || fail "extract missing opencode.bin"
+  cp "$SCRATCH/flat/opencode" "$PREFIX/bin/opencode"
+  cp "$SCRATCH/flat/opencode.bin" "$PREFIX/libexec/opencode/opencode.bin"
+  for f in "$SCRATCH"/flat/*.so; do [ -f "$f" ] && cp "$f" "$PREFIX/libexec/opencode/"; done
+  chmod +x "$PREFIX/bin/opencode" "$PREFIX/libexec/opencode/opencode.bin"
+  result "flat-zip install done (bin/opencode + libexec/opencode/)"
 fi
-O2="opencode2"
-command -v opencode2 >/dev/null 2>&1 || O2="${PREFIX:-}/bin/opencode2"
+O2="opencode"
+command -v opencode >/dev/null 2>&1 || O2="${PREFIX:-}/bin/opencode"
 step "verify (local-only; no network/billing)"
 "$O2" --version > "$SCRATCH/ver-${TS}.txt" 2>&1; RC=$?; redact < "$SCRATCH/ver-${TS}.txt" >> "$LOGFILE" 2>&1; tail -n 5 "$SCRATCH/ver-${TS}.txt" | redact || true
-[ "$RC" -eq 0 ] || fail "opencode2 --version failed (rc=$RC)"
+[ "$RC" -eq 0 ] || fail "opencode --version failed (rc=$RC)"
 VER="$(head -n1 "$SCRATCH/ver-${TS}.txt" || echo unknown)"
 case "$VER" in 2.*) result "version ok: $VER";; *) fail "expected 2.x, got: $VER";; esac
-"$O2" --help > "$SCRATCH/help-${TS}.txt" 2>&1 || fail "opencode2 --help failed"; redact < "$SCRATCH/help-${TS}.txt" >> "$LOGFILE" 2>&1; tail -n 10 "$SCRATCH/help-${TS}.txt" | redact || true
+"$O2" --help > "$SCRATCH/help-${TS}.txt" 2>&1 || fail "opencode --help failed"; redact < "$SCRATCH/help-${TS}.txt" >> "$LOGFILE" 2>&1; tail -n 10 "$SCRATCH/help-${TS}.txt" | redact || true
 if [ "$TEST_LIVE" -eq 1 ]; then
   step "live model smoke (opt-in, costs tokens)"
   if command -v timeout >/dev/null 2>&1; then timeout 120 "$O2" run "say hi" > "$SCRATCH/live-${TS}.txt" 2>&1; RC=$?;
@@ -216,7 +229,7 @@ else
 fi
 if [ -f "$HOME_DIR/.config/opencode/cli.json" ]; then result "auto-migration: cli.json present (first V2 start creates it from tui.json when missing)";
 else log "RESULT" "NOTE: no cli.json yet; first V2 start auto-creates ~/.config/opencode/cli.json from tui.json"; fi
-result "v1 still installed: $(opencode --version 2>/dev/null | head -n1 || echo 'v1 not found (was: '"$V1_PIN"')')"
+result "v1 files replaced by this upgrade (rollback: reinstall the v1 1.x artifact, then copy configs back from $BACKUP_DIR)"
 echo "WARN: V1 plugins do NOT run on V2; server API callers must be ported. Checklist (no auto-port):"
 echo "  1) list plugins: ls ~/.config/opencode/plugin 2>/dev/null (do NOT cat auth.json/opencode.json to chat)"
 echo "  2) check each plugin README for a V2-compatible release; reinstall per-V2 docs"

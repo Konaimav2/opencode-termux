@@ -602,7 +602,7 @@ jobs:
       - name: Upload packages as artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: opencode2-termux-${{ env.OPENCODE_V2_REF }}
+          name: opencode-termux-${{ env.OPENCODE_V2_REF }}
           path: |
             build-v2/packages/*.zip
             build-v2/packages/*.pkg.tar.xz
@@ -631,7 +631,7 @@ jobs:
           echo "Release tag: $tag"
           echo "Pre-release: $prerelease"
 
-      - name: Create GitHub Release (opencode2)
+      - name: Create GitHub Release (opencode v2)
         if: env.RELEASE_TAG != ''
         uses: softprops/action-gh-release@v2
         with:
@@ -642,35 +642,36 @@ jobs:
             build-v2/packages/*.pkg.tar.xz
             build-v2/packages/*.deb
           body: |
-            ## opencode2 ${{ env.OPENCODE_V2_REF }} for Android/Termux (aarch64)
+            ## opencode ${{ env.OPENCODE_V2_REF }} for Android/Termux (aarch64)
 
-            Side-by-side install with the v1 `opencode` package — v2 files live
-            under `bin/opencode2` and `libexec/opencode2/` and never replace v1.
+            V2 takes over the `opencode` command: installing over a v1 package
+            upgrades it in place (2.0.18 > 1.18.27). Configs, sessions and auth
+            live in shared locations and are preserved.
 
             ### Installation
 
             **Termux (pacman):**
             ```bash
-            # Download the opencode2 .pkg.tar.xz file, then:
-            pacman -U opencode2-${{ env.OPENCODE_V2_PKGVER }}-1-aarch64.pkg.tar.xz
-            opencode2 --version
+            # Download the opencode .pkg.tar.xz file, then:
+            pacman -U opencode-${{ env.OPENCODE_V2_PKGVER }}-1-aarch64.pkg.tar.xz
+            opencode --version
             ```
 
             **Termux (dpkg):**
             ```bash
-            # Download the opencode2 .deb file, then:
-            dpkg -i opencode2_${{ env.OPENCODE_V2_PKGVER }}_aarch64.deb
-            opencode2 --version
+            # Download the opencode .deb file, then:
+            dpkg -i opencode_${{ env.OPENCODE_V2_PKGVER }}_aarch64.deb
+            opencode --version
             ```
 
             **Standalone binary (zip):**
             ```bash
-            # The zip contains bin/opencode2 + libexec/opencode2/opencode2.bin +
+            # The zip contains bin/opencode + opencode.bin +
             # libtagfix.so + libopentui.so (flat layout; the wrapper resolves
             # siblings via its own dir):
-            unzip opencode2-${{ env.OPENCODE_V2_PKGVER }}-android-aarch64.zip -d $PREFIX/bin/
-            chmod +x $PREFIX/bin/opencode2 $PREFIX/bin/opencode2.bin
-            opencode2 --version
+            unzip opencode-${{ env.OPENCODE_V2_PKGVER }}-android-aarch64.zip -d $PREFIX/bin/
+            chmod +x $PREFIX/bin/opencode $PREFIX/bin/opencode.bin
+            opencode --version
             ```
 
             ### Notes
