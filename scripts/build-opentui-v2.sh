@@ -57,6 +57,20 @@ else
     exit 1
 fi
 
+# Extract vendored Zig deps (yoga/ghostty/uucode) from src/vendor/zig-deps.tar.gz
+# into packages/native/zig-deps/ (build.zig.zon references them by relative
+# path; without this, zig build fails with "unable to open ... zig-deps/yoga:
+# FileNotFound"). Idempotent via .ready marker. Upstream runs this as the
+# `prepare:zig` npm script; CI has no npm context here, so run it directly.
+echo ">>> Preparing vendored Zig deps..."
+cd "$SRC/packages/native"
+sh scripts/prepare-zig-deps.sh
+[ -d "$SRC/packages/native/zig-deps/yoga" ] || {
+    echo "ERROR: zig-deps/yoga still missing after prepare-zig-deps.sh"
+    exit 1
+}
+echo "    zig-deps ready"
+
 # Stage the merged bionic sysroot: NDK usr/include with the arch-specific
 # subdir flattened in, plus nullability shims for translate-c (Zig cannot
 # parse clang _Nullable/_Nonnull annotations on array params).
