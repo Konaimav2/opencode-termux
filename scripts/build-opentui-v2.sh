@@ -95,6 +95,17 @@ cat > "$BIONIC_SYSROOT_INC/__opentui/Yoga_shimmed.h" <<'EOF'
 #define _Nonnull
 #include "../yoga/yoga/Yoga.h"
 EOF
+# The shims include vendored headers by sysroot-relative path, so stage them:
+# $INC/miniaudio.h (from src/vendor) and $INC/yoga/yoga/Yoga.h (from the
+# zig-deps prepared above). Without these, translate-c fails with
+# "'../miniaudio.h' not found" (this step is missing upstream too — their
+# manual build only passed with a stale sysroot).
+echo ">>> Staging vendored headers into merged sysroot..."
+cp "$SRC/packages/native/src/vendor/miniaudio/miniaudio.h" "$BIONIC_SYSROOT_INC/miniaudio.h"
+mkdir -p "$BIONIC_SYSROOT_INC/yoga"
+cp -a "$SRC/packages/native/zig-deps/yoga/yoga" "$BIONIC_SYSROOT_INC/yoga/"
+[ -f "$BIONIC_SYSROOT_INC/miniaudio.h" ] || { echo "ERROR: miniaudio.h staging failed"; exit 1; }
+[ -f "$BIONIC_SYSROOT_INC/yoga/yoga/Yoga.h" ] || { echo "ERROR: Yoga.h staging failed"; exit 1; }
 
 # Zig libc config pointing at the NDK bionic sysroot (API level = $ANDROID_API,
 # our floor — NOT upstream's hardcoded 29).
