@@ -4,7 +4,7 @@
 # Repo source file is bin/opencode2 (bin/opencode stays the V1 wrapper so the
 # v1 line keeps building). This wrapper is INSTALLED as bin/opencode: v2 takes
 # over the `opencode` command via a normal package upgrade (pacman -U /
-# dpkg -i over v1 1.x; version 2.0.18 > 1.18.27).
+# dpkg -i over v1 1.x; version 2.0.19 > 1.18.27).
 #
 # Derived from the upstream opencode wrapper plus our bin/opencode tweaks:
 # LD_PRELOAD libtagfix.so (disables Android bionic TBI heap tagging — without

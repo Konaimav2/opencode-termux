@@ -1,0 +1,17 @@
+diff --git a/packages/cli/script/build.ts b/packages/cli/script/build.ts
+index f55d890..afae115 100755
+--- a/packages/cli/script/build.ts
++++ b/packages/cli/script/build.ts
+@@ -33,10 +33,11 @@ const releaseAssets = new Map<string, Promise<Map<string, string>>>()
+ const allTargets: {
+   os: string
+   arch: "arm64" | "x64"
+-  abi?: "musl"
++  abi?: "musl" | "android"
+   avx2?: false
+ }[] = [
+   { os: "linux", arch: "arm64" },
++  { os: "linux", arch: "arm64", abi: "android" },
+   { os: "linux", arch: "x64" },
+   { os: "linux", arch: "x64", avx2: false },
+   { os: "linux", arch: "arm64", abi: "musl" },

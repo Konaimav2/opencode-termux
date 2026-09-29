@@ -5,7 +5,7 @@
 #
 # TAKEOVER upgrade: installs package `opencode` 2.x, which REPLACES the v1
 # files bin/opencode + libexec/opencode/opencode.bin in place
-# (2.0.18 > 1.18.27, so pacman -U / dpkg -i upgrade cleanly). Configs,
+# (2.0.19 > 1.18.27, so pacman -U / dpkg -i upgrade cleanly). Configs,
 # sessions and auth are shared locations — nothing is deleted except a
 # stray bin/opencode->opencode2 symlink (backed up first).
 #

@@ -9,8 +9,8 @@
 # 3. Deb: opencode_${OPENCODE_V2_PKGVER}_aarch64.deb (Termux deb format)
 #
 # Package version tracks the opencode V2 *source* tag (OPENCODE_V2_PKGVER,
-# default 2.0.18 — see scripts/env-v2.sh header for why NOT upstream's 1.0.1).
-# Since 2.0.18 > 1.18.27, `pacman -U` / `dpkg -i` UPGRADE a v1 install in
+# default 2.0.19 — see scripts/env-v2.sh header for why NOT upstream's 1.0.1).
+# Since 2.0.19 > 1.18.27, `pacman -U` / `dpkg -i` UPGRADE a v1 install in
 # place: bin/opencode and libexec/opencode/opencode.bin are replaced.
 # v1's lib/libopentui.so is left behind as a harmless orphan (v2 keeps its
 # renderer private under libexec/opencode/).
@@ -215,7 +215,7 @@ Homepage: https://github.com/anomalyco/opencode
 Description: OpenCode 2 AI coding assistant for Android/Termux
  OpenCode v2 CLI with the Android OpenTUI renderer. Takes over the
  `opencode` command: installing over a v1 package upgrades it in place
- (2.0.18 > 1.18.27). The v1 lib/libopentui.so stays behind as a harmless
+ (2.0.19 > 1.18.27). The v1 lib/libopentui.so stays behind as a harmless
  orphan; v2 keeps its renderer private under libexec/opencode/.
 EOF
 

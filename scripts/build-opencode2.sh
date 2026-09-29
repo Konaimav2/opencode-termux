@@ -6,19 +6,25 @@
 # This script:
 # 1. Clones anomalyco/opencode at $OPENCODE_V2_REF (or reuses
 #    $OPENCODE_V2_WORKTREE when set to an existing checkout)
-# 2. Ensures the HOST Bun is exactly $BUN_VERSION (1.4.2) — host AND target
+# 2. Applies patches/opencode2/android-target.patch — adds the
+#    opencode-linux-arm64-android entry to packages/cli/script/build.ts
+#    (no public opencode source ships an Android target; upstream's own
+#    v1.0.x build could only have worked with the same local addition)
+# 3. Ensures the HOST Bun is exactly $BUN_VERSION (1.4.2) — host AND target
 #    are the same official Bun release on the v2 line
-# 3. Runs `bun install --ignore-scripts`, then the upstream build entrypoint:
+# 4. Runs `bun install --ignore-scripts`, then the upstream build entrypoint:
 #      cd packages/cli && bun run script/build.ts \
-#        --target=opencode2-linux-arm64-android --skip-web-ui
-# 4. Copies cli-linux-arm64-android/bin/opencode2 to $DIST_DIR/opencode2.bin
+#        --target=opencode-linux-arm64-android --skip-web-ui
+# 5. Copies cli-linux-arm64-android/bin/opencode to $DIST_DIR/opencode2.bin
+#    (internal filename; the package installs it as libexec/opencode/opencode.bin)
 #
 # Deliberately ABSENT (vs the v1 scripts/build-opencode.sh):
 #   - NO custom Bun/WebKit rebuild — the official `bun build` cross-compiles
 #     straight to opencode2-linux-arm64-android.
 #   - NO module-graph surgery (no AWS/undici stubbing; Bun 1.4.2 host and
 #     target share the same module graph format).
-#   - NO opencode source patch — upstream proves none is needed on v2.
+#   - Exactly ONE opencode source patch (this line's own android target —
+#     everything else is upstream's official build).
 #
 # Requires: scripts/build-opentui-v2.sh should run first so $OPENTUI_LIB
 # exists for the final assertion (the .bin dlopens it at runtime via
@@ -58,6 +64,25 @@ else
     fi
 fi
 
+# Add the Android target to the upstream build matrix (loud gate).
+OPENCODE2_PATCH="$REPO_ROOT/patches/opencode2/android-target.patch"
+if [ ! -f "$OPENCODE2_PATCH" ]; then
+    echo "ERROR: $OPENCODE2_PATCH not found"
+    exit 1
+fi
+echo ">>> Applying opencode2 Android-target patch..."
+cd "$OPENCODE_SRC"
+if git apply --check "$OPENCODE2_PATCH" 2>/dev/null; then
+    git apply "$OPENCODE2_PATCH"
+    echo "    Patch applied successfully"
+elif git apply --check --reverse "$OPENCODE2_PATCH" 2>/dev/null; then
+    echo "    Patch already applied, skipping"
+else
+    echo "ERROR: android-target patch does not apply to ${OPENCODE_V2_REF}"
+    echo "       Regenerate patches/opencode2/android-target.patch against this ref."
+    exit 1
+fi
+
 # Host Bun must be EXACTLY $BUN_VERSION (host and target share one Bun on v2).
 # Same install pattern as .github/workflows/build.yml (pinned host Bun step):
 # install via the official script only when the current bun differs.
@@ -86,15 +111,16 @@ export OPENCODE_VERSION="$OPENCODE_V2_PKGVER"
 export OPENCODE_CHANNEL
 "$HOST_BUN" install --ignore-scripts
 
-# Upstream v2 build entrypoint: official bun build for the Android target.
-echo ">>> Building opencode2 binary (target opencode2-linux-arm64-android)..."
+# Upstream v2 build entrypoint: official bun build for the Android target
+# (added by our android-target patch; binary name stays `opencode`).
+echo ">>> Building opencode binary (target opencode-linux-arm64-android)..."
 mkdir -p "$DIST_DIR"
 cd "$OPENCODE_SRC/packages/cli"
 "$HOST_BUN" run script/build.ts \
-    --target=opencode2-linux-arm64-android \
+    --target=opencode-linux-arm64-android \
     --skip-web-ui \
     --outdir="$DIST_DIR/cli"
-cp "$DIST_DIR/cli/cli-linux-arm64-android/bin/opencode2" "$DIST_DIR/opencode2.bin"
+cp "$DIST_DIR/cli/cli-linux-arm64-android/bin/opencode" "$DIST_DIR/opencode2.bin"
 chmod 755 "$DIST_DIR/opencode2.bin"
 
 # Final assertions: the binary must be non-empty and the v2 renderer library

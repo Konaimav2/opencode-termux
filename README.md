@@ -15,7 +15,7 @@ OpenCode is an AI-powered coding assistant for the terminal. It uses [Bun](https
 
 ## Install (Termux)
 
-### Default: opencode 2.x (V2 line, 2.0.18 — takes over the `opencode` command)
+### Default: opencode 2.x (V2 line, 2.0.19 — takes over the `opencode` command)
 
 ```bash
 # On-device installer (upgrades v1 in place; backs up configs first):
@@ -24,23 +24,23 @@ bash install-opencode2.sh
 opencode --version   # expect 2.x
 ```
 
-Or install a package manually (2.0.18 > 1.18.27, so this upgrades v1):
+Or install a package manually (2.0.19 > 1.18.27, so this upgrades v1):
 
 ```bash
-curl -LO https://github.com/Konaimav2/opencode-termux/releases/latest/download/opencode-2.0.18-1-aarch64.pkg.tar.xz
+curl -LO https://github.com/Konaimav2/opencode-termux/releases/latest/download/opencode-2.0.19-1-aarch64.pkg.tar.xz
 pacman -U opencode-*-aarch64.pkg.tar.xz
 opencode --version
 ```
 
 ```bash
-curl -LO https://github.com/Konaimav2/opencode-termux/releases/latest/download/opencode_2.0.18_aarch64.deb
+curl -LO https://github.com/Konaimav2/opencode-termux/releases/latest/download/opencode_2.0.19_aarch64.deb
 dpkg -i opencode_*_aarch64.deb
 opencode --version
 ```
 
 ```bash
 # Standalone zip (flat layout; the wrapper resolves siblings via its own dir):
-unzip opencode-2.0.18-android-aarch64.zip -d $PREFIX/bin/
+unzip opencode-2.0.19-android-aarch64.zip -d $PREFIX/bin/
 chmod +x $PREFIX/bin/opencode $PREFIX/bin/opencode.bin
 opencode --version
 ```
@@ -132,7 +132,7 @@ opencode-termux/
     build-opentui.sh               # Build libopentui.so for Android
     build-opencode.sh              # Build OpenCode standalone binary
     make-packages.sh               # Create zip, pacman, and deb packages
-    env-v2.sh                      # V2 line env (Bun 1.4.2 / OpenTUI 0.5.10 / opencode v2.0.18)
+    env-v2.sh                      # V2 line env (Bun 1.4.2 / OpenTUI 0.5.10 / opencode v2.0.19)
     build-opentui-v2.sh            # Build libopentui.so for Android (v2 line)
     build-opencode2.sh             # Build opencode2 binary via official bun target (v2 line)
     make-packages-v2.sh            # Create opencode2 zip, pacman, and deb packages
