@@ -1,8 +1,8 @@
-# opencode-termux: opentui v0.5.10 Android/Termux patch (v2 line)
+# opencode-termux: opentui v0.5.12 Android/Termux patch (v2 line)
 #
 # Adapted from upstream's v2-0.5.10-android.patch for our tree. Applies on top
-# of a clean anomalyco/opentui checkout at tag v0.5.10:
-#   git -C <opentui-v0.5.10> apply patches/opentui/v2-0.5.10-android-termux.patch
+# of a clean anomalyco/opentui checkout at tag v0.5.12:
+#   git -C <opentui-v0.5.12> apply patches/opentui/v2-0.5.12-android-termux.patch
 #
 # What it does (kept from upstream):
 #   - build.zig: skip separate pthread/m system libs on Android — bionic libc

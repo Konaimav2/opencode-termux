@@ -10,7 +10,7 @@
 #     The Android target entry itself comes from our
 #     patches/opencode2/android-target.patch (no public opencode source
 #     ships it) applied by scripts/build-opencode2.sh.
-#   - opentui is pinned to 0.5.10 (the version opencode v2 depends on).
+#   - opentui is pinned to 0.5.12 (the version opencode v2 depends on).
 #   - Zig is 0.16.0: the v2 opentui Android patch needs it. Kept in the
 #     separate ZIG_V2_VERSION variable so it can never collide with v1's
 #     ZIG_VERSION=0.15.2.
@@ -30,7 +30,7 @@ export REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Versions
 export BUN_VERSION="${BUN_VERSION:-1.4.2}"
-export OPENTUI_VERSION="${OPENTUI_VERSION:-0.5.10}"
+export OPENTUI_VERSION="${OPENTUI_VERSION:-0.5.12}"
 export OPENCODE_V2_REF="${OPENCODE_V2_REF:-v2.0.19}"
 export OPENCODE_V2_PKGVER="${OPENCODE_V2_PKGVER:-2.0.19}"
 export OPENCODE_CHANNEL="${OPENCODE_CHANNEL:-android-termux}"

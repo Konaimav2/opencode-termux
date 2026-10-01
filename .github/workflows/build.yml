@@ -499,7 +499,7 @@ jobs:
 
     env:
       BUN_VERSION: "1.4.2"
-      OPENTUI_VERSION: "0.5.10"
+      OPENTUI_VERSION: "0.5.12"
       OPENCODE_V2_REF: "v2.0.19"
       OPENCODE_V2_PKGVER: "2.0.19"
       ZIG_V2_VERSION: "0.16.0"

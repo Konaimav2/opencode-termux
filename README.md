@@ -132,7 +132,7 @@ opencode-termux/
     build-opentui.sh               # Build libopentui.so for Android
     build-opencode.sh              # Build OpenCode standalone binary
     make-packages.sh               # Create zip, pacman, and deb packages
-    env-v2.sh                      # V2 line env (Bun 1.4.2 / OpenTUI 0.5.10 / opencode v2.0.19)
+    env-v2.sh                      # V2 line env (Bun 1.4.2 / OpenTUI 0.5.12 / opencode v2.0.19)
     build-opentui-v2.sh            # Build libopentui.so for Android (v2 line)
     build-opencode2.sh             # Build opencode2 binary via official bun target (v2 line)
     make-packages-v2.sh            # Create opencode2 zip, pacman, and deb packages

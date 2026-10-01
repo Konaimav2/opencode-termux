@@ -3,10 +3,10 @@
 #
 # Usage: ./scripts/build-opentui-v2.sh
 #
-# OpenCode v2's TUI renderer (@opentui/core 0.5.10) uses a native Zig library.
+# OpenCode v2's TUI renderer (@opentui/core 0.5.12) uses a native Zig library.
 # The upstream build targets aarch64-linux (musl), which fails on Android
 # because getauxval cannot be resolved. We apply
-# patches/opentui/v2-0.5.10-android-termux.patch (bionic sysroot + pthread/m
+# patches/opentui/v2-0.5.12-android-termux.patch (bionic sysroot + pthread/m
 # guards) and build for aarch64-linux-android with Zig 0.16.0.
 #
 # Requires: Zig 0.16.0, Android NDK (see scripts/env-v2.sh).
@@ -39,12 +39,12 @@ fi
 
 # Apply the Android patch with a loud gate: fail unless the patch applies
 # cleanly or is already applied (same pattern as scripts/build-opencode.sh).
-OPENTUI_V2_PATCH="$REPO_ROOT/patches/opentui/v2-0.5.10-android-termux.patch"
+OPENTUI_V2_PATCH="$REPO_ROOT/patches/opentui/v2-0.5.12-android-termux.patch"
 if [ ! -f "$OPENTUI_V2_PATCH" ]; then
     echo "ERROR: $OPENTUI_V2_PATCH not found"
     exit 1
 fi
-echo ">>> Applying opentui v2 Android patch (patches/opentui/v2-0.5.10-android-termux.patch)..."
+echo ">>> Applying opentui v2 Android patch (patches/opentui/v2-0.5.12-android-termux.patch)..."
 cd "$SRC"
 if git apply --check "$OPENTUI_V2_PATCH" 2>/dev/null; then
     git apply "$OPENTUI_V2_PATCH"
@@ -53,7 +53,7 @@ elif git apply --check --reverse "$OPENTUI_V2_PATCH" 2>/dev/null; then
     echo "    Patch already applied, skipping"
 else
     echo "ERROR: opentui v2 Android patch does not apply cleanly to v${OPENTUI_VERSION}"
-    echo "       Regenerate patches/opentui/v2-0.5.10-android-termux.patch against this tag."
+    echo "       Regenerate patches/opentui/v2-0.5.12-android-termux.patch against this tag."
     exit 1
 fi
 
