@@ -1,5 +1,5 @@
 diff --git a/packages/cli/script/build.ts b/packages/cli/script/build.ts
-index f55d890..afae115 100755
+index f55d890..715d150 100755
 --- a/packages/cli/script/build.ts
 +++ b/packages/cli/script/build.ts
 @@ -33,10 +33,11 @@ const releaseAssets = new Map<string, Promise<Map<string, string>>>()
@@ -15,6 +15,27 @@ index f55d890..afae115 100755
    { os: "linux", arch: "x64" },
    { os: "linux", arch: "x64", avx2: false },
    { os: "linux", arch: "arm64", abi: "musl" },
+@@ -108,11 +109,19 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
+     },
+   }
+   const parcelWatcherPackage = `@parcel/watcher-${item.os}-${item.arch}${item.os === "linux" ? `-${item.abi ?? "glibc"}` : ""}`
++  // Android has no @parcel/watcher-*-android native package and the bundler
++  // resolves the emitted require() at build time, so emit a stub that throws
++  // when called. The caller (watcher.ts) try/catches this into "no watcher",
++  // the same graceful degrade as a missing binding.
++  const parcelWatcherContents =
++    item.abi === "android"
++      ? `export default () => { throw new Error("@parcel/watcher is not available on Android") }`
++      : `export default () => require(${JSON.stringify(parcelWatcherPackage)})`
+   const parcelWatcherPlugin: BunPlugin = {
+     name: "parcel-watcher-binding",
+     setup(build) {
+       build.onLoad({ filter: /filesystem[/\\]watcher-binding\.ts$/ }, () => ({
+-        contents: `export default () => require(${JSON.stringify(parcelWatcherPackage)})`,
++        contents: parcelWatcherContents,
+         loader: "js",
+       }))
+     },
 diff --git a/packages/cli/script/opencode-pty.ts b/packages/cli/script/opencode-pty.ts
 index ae3ec30..d15afcb 100644
 --- a/packages/cli/script/opencode-pty.ts
