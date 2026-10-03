@@ -111,6 +111,60 @@ export OPENCODE_VERSION="$OPENCODE_V2_PKGVER"
 export OPENCODE_CHANNEL
 "$HOST_BUN" install --ignore-scripts
 
+# Patch the installed @opentui/core JS for the Android runtime (same layer
+# v1 used: the bundled JS comes from npm, not from our opentui source
+# checkout, so patches/opencode2/*.patch cannot reach it).
+#  1. getCurrentNodeAssetTarget(): Bun's Android runtime reports
+#     process.platform === "android", which is not in NATIVE_FILE_NAMES, so
+#     the TUI dies with "Unsupported OpenTUI Node asset target:
+#     android-arm64" before any path override is consulted. Android/Bionic
+#     is Linux for asset purposes (identical libopentui.so filename).
+#  2. resolveNativeLibraryPath(): honor OPENTUI_LIB_PATH first, restoring
+#     the wrapper contract our bin/opencode2 relies on (v2 upstream only
+#     knows OTUI_ASSET_ROOT).
+# NOTE: build.ts below runs with --skip-install so this step's edits are not
+# wiped by build.ts's own `bun install --os=* --cpu=*` pass.
+echo ">>> Patching @opentui/core runtime for Android (node_modules)..."
+python3 - "$OPENCODE_SRC" <<'PY'
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+files = sorted(root.rglob("node_modules/@opentui/core/chunk-bun-*.js")) + \
+        sorted(root.rglob("node_modules/@opentui/core/chunk-node-*.js"))
+if not files:
+    print("ERROR: no @opentui/core chunk files found under", root)
+    sys.exit(1)
+changed = 0
+already = 0
+for path in files:
+    text = path.read_text()
+    orig = text
+    old_ret = "  return {\n    platform: process.platform,"
+    new_ret = ("  return {\n"
+               "    // Android/Bionic is Linux for asset purposes.\n"
+               "    platform: process.platform === \"android\" ? \"linux\" : process.platform,")
+    if old_ret in text and "process.platform === \"android\" ? \"linux\"" not in text:
+        text = text.replace(old_ret, new_ret, 1)
+    elif "process.platform === \"android\" ? \"linux\"" in text:
+        already += 1
+    old_res = ("async function resolveNativeLibraryPath() {\n"
+               "  const asset = getNativeAssetDescriptor(getCurrentNodeAssetTarget());")
+    new_res = ("async function resolveNativeLibraryPath() {\n"
+               "  if (process.env.OPENTUI_LIB_PATH) return process.env.OPENTUI_LIB_PATH;\n"
+               "  const asset = getNativeAssetDescriptor(getCurrentNodeAssetTarget());")
+    if old_res in text and "process.env.OPENTUI_LIB_PATH" not in text:
+        text = text.replace(old_res, new_res, 1)
+    if text != orig:
+        path.write_text(text)
+        changed += 1
+        print(f"    patched {path.relative_to(root)}")
+print(f"    {changed} newly patched, {already} already patched, {len(files)} total")
+if changed == 0 and already == 0:
+    print("ERROR: android runtime patch applied to 0 files")
+    sys.exit(1)
+PY
+
 # Upstream v2 build entrypoint: official bun build for the Android target
 # (added by our android-target patch; binary name stays `opencode`).
 echo ">>> Building opencode binary (target opencode-linux-arm64-android)..."
@@ -119,6 +173,7 @@ cd "$OPENCODE_SRC/packages/cli"
 "$HOST_BUN" run script/build.ts \
     --target=opencode-linux-arm64-android \
     --skip-web-ui \
+    --skip-install \
     --outdir="$DIST_DIR/cli"
 cp "$DIST_DIR/cli/cli-linux-arm64-android/bin/opencode" "$DIST_DIR/opencode2.bin"
 chmod 755 "$DIST_DIR/opencode2.bin"
