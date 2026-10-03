@@ -65,23 +65,22 @@ else
 fi
 
 # Add the Android target to the upstream build matrix (loud gate).
-OPENCODE2_PATCH="$REPO_ROOT/patches/opencode2/android-target.patch"
-if [ ! -f "$OPENCODE2_PATCH" ]; then
-    echo "ERROR: $OPENCODE2_PATCH not found"
-    exit 1
-fi
-echo ">>> Applying opencode2 Android-target patch..."
+# Add our opencode2 patch set (loud gate per file).
+echo ">>> Applying opencode2 patch set (patches/opencode2/)..."
 cd "$OPENCODE_SRC"
-if git apply --check "$OPENCODE2_PATCH" 2>/dev/null; then
-    git apply "$OPENCODE2_PATCH"
-    echo "    Patch applied successfully"
-elif git apply --check --reverse "$OPENCODE2_PATCH" 2>/dev/null; then
-    echo "    Patch already applied, skipping"
-else
-    echo "ERROR: android-target patch does not apply to ${OPENCODE_V2_REF}"
-    echo "       Regenerate patches/opencode2/android-target.patch against this ref."
-    exit 1
-fi
+for OPENCODE2_PATCH in "$REPO_ROOT"/patches/opencode2/*.patch; do
+    [ -f "$OPENCODE2_PATCH" ] || { echo "ERROR: no patches in patches/opencode2/"; exit 1; }
+    if git apply --check "$OPENCODE2_PATCH" 2>/dev/null; then
+        git apply "$OPENCODE2_PATCH"
+        echo "    Applied $(basename "$OPENCODE2_PATCH")"
+    elif git apply --check --reverse "$OPENCODE2_PATCH" 2>/dev/null; then
+        echo "    $(basename "$OPENCODE2_PATCH") already applied, skipping"
+    else
+        echo "ERROR: $(basename "$OPENCODE2_PATCH") does not apply to ${OPENCODE_V2_REF}"
+        echo "       Regenerate it against this ref."
+        exit 1
+    fi
+done
 
 # Host Bun must be EXACTLY $BUN_VERSION (host and target share one Bun on v2).
 # Same install pattern as .github/workflows/build.yml (pinned host Bun step):

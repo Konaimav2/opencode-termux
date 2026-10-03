@@ -1,0 +1,76 @@
+diff --git a/packages/cli/src/services/updater.ts b/packages/cli/src/services/updater.ts
+index 2082838..d9ba171 100644
+--- a/packages/cli/src/services/updater.ts
++++ b/packages/cli/src/services/updater.ts
+@@ -232,7 +232,71 @@ const make = Effect.gen(function* () {
+     }
+   }
+ 
++  const termuxRelease = Effect.fnUntraced(function* () {
++    // Android/Termux fork channel: opencode.ai knows nothing about it, so
++    // resolve our own GitHub releases instead. The install step still
++    // reports "Installation method not found" on device (dpkg installs are
++    // handled outside the binary); the check/notify path is what matters.
++    // NOTE: our v2 releases are prereleases, which `releases/latest`
++    // skips — scan the list for the newest v2 tag with a .deb asset.
++    const response = yield* Effect.tryPromise({
++      try: (signal) =>
++        fetch("https://api.github.com/repos/Konaimav2/opencode-termux/releases?per_page=10", {
++          signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
++        }),
++      catch: (cause) =>
++        new UpgradeError(
++          {
++            title: "Could not check for OpenCode updates",
++            detail: errorDetail(cause),
++            retry: "Check your network, then run opencode upgrade again.",
++          },
++          { cause },
++        ),
++    })
++    if (!response.ok)
++      return yield* Effect.fail(
++        new UpgradeError({
++          title: "Could not check for OpenCode updates",
++          detail: `The update service returned HTTP ${response.status}.`,
++          retry: "Try again in a few minutes.",
++        }),
++      )
++    const list: { tag_name?: string; draft?: boolean; assets?: { browser_download_url?: string }[] }[] =
++      yield* Effect.tryPromise({
++        try: () => response.json(),
++        catch: (cause) =>
++          new UpgradeError(
++            {
++              title: "Could not read the OpenCode update information",
++              detail: errorDetail(cause),
++              retry: "Try again in a few minutes.",
++            },
++            { cause },
++          ),
++      })
++    const rel = (Array.isArray(list) ? list : []).find(
++      (item) =>
++        !item?.draft &&
++        /^v2\./.test(item?.tag_name ?? "") &&
++        (item?.assets ?? []).some((asset) => (asset?.browser_download_url ?? "").endsWith(".deb")),
++    )
++    const version = (rel?.tag_name ?? "").replace(/^v/, "").replace(/-android.*$/, "")
++    const pkg =
++      (rel?.assets ?? []).map((asset) => asset?.browser_download_url ?? "").find((url) => url.endsWith(".deb")) ?? ""
++    if (!rel || !version || !pkg)
++      return yield* Effect.fail(
++        new UpgradeError({
++          title: "Could not read the OpenCode update information",
++          detail: "The update service returned incomplete release information.",
++          retry: "Try again in a few minutes.",
++        }),
++      )
++    return { package: pkg, version }
++  })
++
+   const release = Effect.fnUntraced(function* (method?: Method) {
++    if (channel === "android-termux") return yield* termuxRelease
+     const distribution = method === "brew" ? "homebrew" : "npm"
+     const response = yield* Effect.tryPromise({
+       try: (signal) =>
