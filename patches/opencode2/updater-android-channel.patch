@@ -1,5 +1,5 @@
 diff --git a/packages/cli/src/services/updater.ts b/packages/cli/src/services/updater.ts
-index 2082838..d9ba171 100644
+index 2082838..a23187f 100644
 --- a/packages/cli/src/services/updater.ts
 +++ b/packages/cli/src/services/updater.ts
 @@ -232,7 +232,71 @@ const make = Effect.gen(function* () {
@@ -70,7 +70,7 @@ index 2082838..d9ba171 100644
 +  })
 +
    const release = Effect.fnUntraced(function* (method?: Method) {
-+    if (channel === "android-termux") return yield* termuxRelease
++    if (channel === "android-termux") return yield* termuxRelease()
      const distribution = method === "brew" ? "homebrew" : "npm"
      const response = yield* Effect.tryPromise({
        try: (signal) =>
