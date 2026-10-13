@@ -6,8 +6,9 @@
 # This script:
 # 1. Clones anomalyco/opencode at $OPENCODE_V2_REF (or reuses
 #    $OPENCODE_V2_WORKTREE when set to an existing checkout)
-# 2. Applies patches/opencode2/android-target.patch — adds the
-#    opencode-linux-arm64-android entry to packages/cli/script/build.ts
+# 2. Validates source/package/renderer versions, then applies patches/opencode2/
+#    (Android build target/optional native guards and Termux update channel).
+#    android-target.patch adds opencode-linux-arm64-android to build.ts
 #    (no public opencode source ships an Android target; upstream's own
 #    v1.0.x build could only have worked with the same local addition)
 # 3. Ensures the HOST Bun is exactly $BUN_VERSION (1.4.2) — host AND target
@@ -23,8 +24,8 @@
 #     straight to opencode2-linux-arm64-android.
 #   - NO module-graph surgery (no AWS/undici stubbing; Bun 1.4.2 host and
 #     target share the same module graph format).
-#   - Exactly ONE opencode source patch (this line's own android target —
-#     everything else is upstream's official build).
+#   - Two source patches: Android target/optional native guards and the
+#     repo-backed Termux update check. Everything else uses the upstream build.
 #
 # Requires: scripts/build-opentui-v2.sh should run first so $OPENTUI_LIB
 # exists for the final assertion (the .bin dlopens it at runtime via
@@ -63,6 +64,25 @@ else
         fi
     fi
 fi
+
+# Ref-only overrides or stale reused checkouts must not stamp the wrong package
+# version or link a mismatched renderer. Check before patching, host Bun install
+# or dependency install; this reads metadata only and changes no source files.
+echo ">>> Validating OpenCode source/package/OpenTUI versions..."
+python3 - "$OPENCODE_SRC" "$OPENCODE_V2_PKGVER" "$OPENTUI_VERSION" <<'V2_SOURCE_CHECK'
+import json
+import sys
+from pathlib import Path
+
+root, version, renderer = sys.argv[1:]
+pkg = json.loads((Path(root) / "package.json").read_text())
+if pkg.get("version") != version:
+    sys.exit("ERROR: source version and OPENCODE_V2_PKGVER disagree")
+catalog = pkg["workspaces"]["catalog"]
+if any(catalog.get(name) != renderer for name in
+       ("@opentui/core", "@opentui/solid", "@opentui/keymap")):
+    sys.exit("ERROR: source OpenTUI catalog and OPENTUI_VERSION disagree")
+V2_SOURCE_CHECK
 
 # Add the Android target to the upstream build matrix (loud gate).
 # Add our opencode2 patch set (loud gate per file).
@@ -136,32 +156,43 @@ if not files:
     sys.exit(1)
 changed = 0
 already = 0
+verified = {"bun": 0, "node": 0}
 for path in files:
     text = path.read_text()
     orig = text
+    # Other distributed chunks contain neither runtime function. A chunk that
+    # contains either must satisfy BOTH exact anchors, even on an idempotent run.
+    if "function getCurrentNodeAssetTarget()" not in text and "async function resolveNativeLibraryPath()" not in text:
+        continue
     old_ret = "  return {\n    platform: process.platform,"
     new_ret = ("  return {\n"
                "    // Android/Bionic is Linux for asset purposes.\n"
                "    platform: process.platform === \"android\" ? \"linux\" : process.platform,")
-    if old_ret in text and "process.platform === \"android\" ? \"linux\"" not in text:
-        text = text.replace(old_ret, new_ret, 1)
-    elif "process.platform === \"android\" ? \"linux\"" in text:
-        already += 1
     old_res = ("async function resolveNativeLibraryPath() {\n"
                "  const asset = getNativeAssetDescriptor(getCurrentNodeAssetTarget());")
     new_res = ("async function resolveNativeLibraryPath() {\n"
                "  if (process.env.OPENTUI_LIB_PATH) return process.env.OPENTUI_LIB_PATH;\n"
                "  const asset = getNativeAssetDescriptor(getCurrentNodeAssetTarget());")
-    if old_res in text and "process.env.OPENTUI_LIB_PATH" not in text:
-        text = text.replace(old_res, new_res, 1)
+    for old, new, label in ((old_ret, new_ret, "Android platform"),
+                            (old_res, new_res, "OPENTUI_LIB_PATH-first")):
+        if text.count(new) == 1 and text.count(old) == 0:
+            continue
+        if text.count(old) != 1 or text.count(new) != 0:
+            sys.exit(f"ERROR: {label} runtime anchor missing or ambiguous in {path.relative_to(root)}")
+        text = text.replace(old, new, 1)
+    if text.count(new_ret) != 1 or text.count(new_res) != 1:
+        sys.exit(f"ERROR: incomplete Android runtime patch in {path.relative_to(root)}")
+    runtime = "bun" if path.name.startswith("chunk-bun-") else "node"
+    verified[runtime] += 1
     if text != orig:
         path.write_text(text)
         changed += 1
         print(f"    patched {path.relative_to(root)}")
+    else:
+        already += 1
 print(f"    {changed} newly patched, {already} already patched, {len(files)} total")
-if changed == 0 and already == 0:
-    print("ERROR: android runtime patch applied to 0 files")
-    sys.exit(1)
+if not all(verified.values()):
+    sys.exit("ERROR: both Bun and Node runtime chunks must have both Android safeguards")
 PY
 
 # Upstream v2 build entrypoint: official bun build for the Android target

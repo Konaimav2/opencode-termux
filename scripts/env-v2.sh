@@ -10,15 +10,15 @@
 #     The Android target entry itself comes from our
 #     patches/opencode2/android-target.patch (no public opencode source
 #     ships it) applied by scripts/build-opencode2.sh.
-#   - opentui is pinned to 0.5.12 (the version opencode v2 depends on).
+#   - opentui is pinned to 0.5.17 (the v2.0.27 source catalog version).
 #   - Zig is 0.16.0: the v2 opentui Android patch needs it. Kept in the
 #     separate ZIG_V2_VERSION variable so it can never collide with v1's
 #     ZIG_VERSION=0.15.2.
 #   - ANDROID_API stays 24 (our floor), NOT upstream's 29.
 #   - All work happens under build-v2/ so the v1 build/ tree is never touched.
 #
-# Package version choice: OPENCODE_V2_PKGVER=2.0.19 tracks the opencode V2
-# *source* tag (OPENCODE_V2_REF=v2.0.19, minus the leading `v`). We do NOT
+# Package version choice: OPENCODE_V2_PKGVER=2.0.27 tracks the opencode V2
+# *source* tag (OPENCODE_V2_REF=v2.0.27, minus the leading `v`). We do NOT
 # follow upstream's `opencode2-1.0.1` package naming — that 1.0.1 is a
 # release-channel counter that collides confusingly with v1's 1.x versions.
 # Tracking the source tag keeps `opencode --version` and the package
@@ -30,9 +30,9 @@ export REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Versions
 export BUN_VERSION="${BUN_VERSION:-1.4.2}"
-export OPENTUI_VERSION="${OPENTUI_VERSION:-0.5.12}"
-export OPENCODE_V2_REF="${OPENCODE_V2_REF:-v2.0.19}"
-export OPENCODE_V2_PKGVER="${OPENCODE_V2_PKGVER:-2.0.19}"
+export OPENTUI_VERSION="${OPENTUI_VERSION:-0.5.17}"
+export OPENCODE_V2_REF="${OPENCODE_V2_REF:-v2.0.27}"
+export OPENCODE_V2_PKGVER="${OPENCODE_V2_PKGVER:-2.0.27}"
 export OPENCODE_CHANNEL="${OPENCODE_CHANNEL:-android-termux}"
 export ZIG_V2_VERSION="${ZIG_V2_VERSION:-0.16.0}"
 export ANDROID_API="${ANDROID_API:-24}"

@@ -1,8 +1,8 @@
 diff --git a/packages/cli/src/services/updater.ts b/packages/cli/src/services/updater.ts
-index 2082838..a23187f 100644
+index 618265e..8a8c9ac 100644
 --- a/packages/cli/src/services/updater.ts
 +++ b/packages/cli/src/services/updater.ts
-@@ -232,7 +232,71 @@ const make = Effect.gen(function* () {
+@@ -251,7 +251,74 @@
      }
    }
  
@@ -49,16 +49,19 @@ index 2082838..a23187f 100644
 +            { cause },
 +          ),
 +      })
-+    const rel = (Array.isArray(list) ? list : []).find(
-+      (item) =>
-+        !item?.draft &&
-+        /^v2\./.test(item?.tag_name ?? "") &&
-+        (item?.assets ?? []).some((asset) => (asset?.browser_download_url ?? "").endsWith(".deb")),
-+    )
-+    const version = (rel?.tag_name ?? "").replace(/^v/, "").replace(/-android.*$/, "")
-+    const pkg =
-+      (rel?.assets ?? []).map((asset) => asset?.browser_download_url ?? "").find((url) => url.endsWith(".deb")) ?? ""
-+    if (!rel || !version || !pkg)
++    const releases = (Array.isArray(list) ? list : []).flatMap((item) => {
++      if (item?.draft || !/^v2\./.test(item?.tag_name ?? "")) return []
++      const version = (item?.tag_name ?? "").replace(/^v/, "").replace(/-android.*$/, "")
++      const parsed = parseReleaseVersion(version)
++      if (!parsed || parsed.major !== "2") return []
++      const expected = `opencode_${version}_aarch64.deb`
++      const pkg = (item?.assets ?? [])
++        .map((asset) => asset?.browser_download_url ?? "")
++        .find((url) => url.split("/").pop() === expected)
++      return pkg ? [{ package: pkg, version }] : []
++    })
++    const data = releases[0]
++    if (!data)
 +      return yield* Effect.fail(
 +        new UpgradeError({
 +          title: "Could not read the OpenCode update information",
@@ -66,11 +69,11 @@ index 2082838..a23187f 100644
 +          retry: "Try again in a few minutes.",
 +        }),
 +      )
-+    return { package: pkg, version }
++    return data
 +  })
 +
    const release = Effect.fnUntraced(function* (method?: Method) {
 +    if (channel === "android-termux") return yield* termuxRelease()
      const distribution = method === "brew" ? "homebrew" : "npm"
-     const response = yield* Effect.tryPromise({
-       try: (signal) =>
+     // Homebrew Core builds its formula on its own schedule, so the tap release does not describe it.
+     const core = method === "brew" && installedFormula === "opencode"

@@ -3,11 +3,13 @@
 #
 # Usage: ./scripts/build-opentui-v2.sh
 #
-# OpenCode v2's TUI renderer (@opentui/core 0.5.12) uses a native Zig library.
+# OpenCode v2's TUI renderer (@opentui/core 0.5.17) uses a native Zig library.
 # The upstream build targets aarch64-linux (musl), which fails on Android
 # because getauxval cannot be resolved. We apply
 # patches/opentui/v2-0.5.12-android-termux.patch (bionic sysroot + pthread/m
 # guards) and build for aarch64-linux-android with Zig 0.16.0.
+# The existing 0.5.12-named patch also applies cleanly to 0.5.17; keep its
+# filename, and rebuild this version rather than reusing an older renderer.
 #
 # Requires: Zig 0.16.0, Android NDK (see scripts/env-v2.sh).
 

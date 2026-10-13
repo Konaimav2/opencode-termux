@@ -11,9 +11,9 @@ on:
         required: false
         default: '1.18.27'
       opencode_v2_ref:
-        description: 'OpenCode v2 git ref to build (build-v2 job)'
+        description: 'OpenCode v2 version tag to build (build-v2 job)'
         required: false
-        default: 'v2.0.19'
+        default: 'v2.0.27'
       create_prerelease:
         description: 'Create a GitHub pre-release with the built artifacts'
         required: false
@@ -499,9 +499,9 @@ jobs:
 
     env:
       BUN_VERSION: "1.4.2"
-      OPENTUI_VERSION: "0.5.12"
-      OPENCODE_V2_REF: "v2.0.19"
-      OPENCODE_V2_PKGVER: "2.0.19"
+      OPENTUI_VERSION: "0.5.17"
+      OPENCODE_V2_REF: "v2.0.27"
+      OPENCODE_V2_PKGVER: "2.0.27"
       ZIG_V2_VERSION: "0.16.0"
       ANDROID_API: "24"
       ANDROID_NDK_VERSION: "28.1.13356709"
@@ -512,7 +512,15 @@ jobs:
 
       - name: Override OpenCode v2 ref from input
         if: github.event.inputs.opencode_v2_ref
-        run: echo "OPENCODE_V2_REF=${{ github.event.inputs.opencode_v2_ref }}" >> $GITHUB_ENV
+        env:
+          V2_REF_INPUT: ${{ github.event.inputs.opencode_v2_ref }}
+        run: |
+          if [[ ! "$V2_REF_INPUT" =~ ^v2\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "ERROR: opencode_v2_ref must be a V2 version tag, not a branch or arbitrary ref" >&2
+            exit 1
+          fi
+          echo "OPENCODE_V2_REF=$V2_REF_INPUT" >> "$GITHUB_ENV"
+          echo "OPENCODE_V2_PKGVER=${V2_REF_INPUT#v}" >> "$GITHUB_ENV"
 
       - name: Install system packages
         run: |
@@ -622,7 +630,7 @@ jobs:
             if [ -n "${{ inputs.release_tag }}" ]; then
               tag="${{ inputs.release_tag }}"
             else
-              tag="v2-${OPENCODE_V2_PKGVER}-android15-ci${GITHUB_RUN_NUMBER}"
+              tag="v${OPENCODE_V2_PKGVER}-android15-ci${GITHUB_RUN_NUMBER}"
             fi
             prerelease="true"
           fi
@@ -645,7 +653,7 @@ jobs:
             ## opencode ${{ env.OPENCODE_V2_REF }} for Android/Termux (aarch64)
 
             V2 takes over the `opencode` command: installing over a v1 package
-            upgrades it in place (2.0.19 > 1.18.27). Configs, sessions and auth
+            upgrades it in place (${{ env.OPENCODE_V2_PKGVER }} > 1.18.27). Configs, sessions and auth
             live in shared locations and are preserved.
 
             ### Installation

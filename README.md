@@ -2,8 +2,9 @@
 
 > **Maintained fork** by [Konaimav2](https://github.com/Konaimav2/opencode-termux),
 > based on [guysoft/opencode-termux](https://github.com/guysoft/opencode-termux).
-> This fork currently ships **OpenCode 1.18.27** (OpenTUI 0.4.5) with additional
-> Android runtime fixes — see [UPGRADE.md](UPGRADE.md) and
+> The default V2 build targets **OpenCode 2.0.27** with **OpenTUI 0.5.17** and
+> Bun 1.4.2, including the existing Android runtime safeguards. The legacy V1
+> line remains available — see [UPGRADE.md](UPGRADE.md) and
 > [RELEASE_v0.3.0_PREVIEW.md](RELEASE_v0.3.0_PREVIEW.md).
 
 Build system for cross-compiling [OpenCode](https://github.com/anomalyco/opencode) to run natively on Android devices via [Termux](https://termux.dev/).
@@ -15,32 +16,43 @@ OpenCode is an AI-powered coding assistant for the terminal. It uses [Bun](https
 
 ## Install (Termux)
 
-### Default: opencode 2.x (V2 line, 2.0.19 — takes over the `opencode` command)
+### Default: opencode 2.x (V2 line, 2.0.27 — takes over the `opencode` command)
+
+For a manual update, download **one `.deb`** from the versioned V2 prerelease
+(not GitHub's `latest`, which excludes prereleases). Back up your current
+configuration, session data and prior package before installing.
 
 ```bash
-# On-device installer (upgrades v1 in place; backs up configs first):
+curl -LO https://github.com/Konaimav2/opencode-termux/releases/download/v2.0.27-android-rc1/opencode_2.0.27_aarch64.deb
+# Verify the release asset's published SHA256 digest before installing.
+dpkg -i opencode_2.0.27_aarch64.deb
+opencode --version   # expect 2.0.27
+opencode --help
+```
+
+This is an in-place upgrade of package `opencode`, preserving the shared
+configuration/session paths. Keep the prior package for rollback. Native TUI
+rendering and device behavior must be checked after installation; a build or
+version bump alone does not verify them.
+
+The existing installer is **not the recommended path for this update**: it
+downloads multiple formats and its version check does not accept the previously
+observed `opencode v2.x` output. Use the one-deb manual instructions above.
+For historical/reference use only, its explicit-tag invocation is:
+
+```bash
 curl -LO https://github.com/Konaimav2/opencode-termux/raw/feature/opencode2/scripts/install-opencode2.sh
-bash install-opencode2.sh
-opencode --version   # expect 2.x
+bash install-opencode2.sh --ref v2.0.27-android-rc1
 ```
 
-Or install a package manually (2.0.19 > 1.18.27, so this upgrades v1):
+For pacman or standalone ZIP installs, choose only the required format from
+the same [versioned release](https://github.com/Konaimav2/opencode-termux/releases/tag/v2.0.27-android-rc1):
 
 ```bash
-curl -LO https://github.com/Konaimav2/opencode-termux/releases/latest/download/opencode-2.0.19-1-aarch64.pkg.tar.xz
-pacman -U opencode-*-aarch64.pkg.tar.xz
-opencode --version
-```
-
-```bash
-curl -LO https://github.com/Konaimav2/opencode-termux/releases/latest/download/opencode_2.0.19_aarch64.deb
-dpkg -i opencode_*_aarch64.deb
-opencode --version
-```
-
-```bash
-# Standalone zip (flat layout; the wrapper resolves siblings via its own dir):
-unzip opencode-2.0.19-android-aarch64.zip -d $PREFIX/bin/
+# Pacman alternative, after downloading that package:
+pacman -U opencode-2.0.27-1-aarch64.pkg.tar.xz
+# Or standalone zip (flat layout; wrapper resolves siblings):
+unzip opencode-2.0.27-android-aarch64.zip -d $PREFIX/bin/
 chmod +x $PREFIX/bin/opencode $PREFIX/bin/opencode.bin
 opencode --version
 ```
@@ -132,7 +144,7 @@ opencode-termux/
     build-opentui.sh               # Build libopentui.so for Android
     build-opencode.sh              # Build OpenCode standalone binary
     make-packages.sh               # Create zip, pacman, and deb packages
-    env-v2.sh                      # V2 line env (Bun 1.4.2 / OpenTUI 0.5.12 / opencode v2.0.19)
+    env-v2.sh                      # V2 line env (Bun 1.4.2 / OpenTUI 0.5.17 / opencode v2.0.27)
     build-opentui-v2.sh            # Build libopentui.so for Android (v2 line)
     build-opencode2.sh             # Build opencode2 binary via official bun target (v2 line)
     make-packages-v2.sh            # Create opencode2 zip, pacman, and deb packages
