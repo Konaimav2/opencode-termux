@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+      - '!v2.*' # V2 release tags must not rebuild/overwrite manually published assets.
   workflow_dispatch:
     inputs:
       opencode_version:
@@ -484,6 +485,8 @@ jobs:
 
   build-v2:
     name: Build opencode2 (v2 line) Android aarch64
+    # V2 builds/releases are explicit manual runs, never duplicate tag-push builds.
+    if: github.event_name == 'workflow_dispatch'
     # The v2 line needs NO Bun/WebKit rebuild — the official
     # `bun build --target=opencode2-linux-arm64-android` with the official
     # host Bun 1.4.2 produces the Android binary directly. So this job runs

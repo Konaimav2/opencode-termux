@@ -8,6 +8,7 @@ uses a fresh retained scratch directory under evidence-root/implementation-tests
 """
 
 import argparse
+import fnmatch
 import json
 import os
 from pathlib import Path
@@ -60,6 +61,57 @@ def runtime_patch(root):
     return run(["python3", "-", str(root)], input=runtime_block())
 
 
+def workflow_push_tag_patterns(workflow):
+    """Read the actual workflow's quoted block-list on.push.tags (no YAML dependency)."""
+    match = re.search(r"^on:\n  push:\n    tags:\n((?:      [^\n]*\n)+)", workflow, re.M)
+    if not match:
+        raise AssertionError("missing block-list on.push.tags")
+    patterns = []
+    for line in match[1].splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        item = re.fullmatch(r"      - (['\"])([^'\"]+)\1(?:\s+#.*)?", line)
+        if not item:
+            raise AssertionError("unsupported tag-filter syntax; expected quoted list item")
+        patterns.append(item[2])
+    return patterns
+
+
+def simulate_tag_push(patterns, tag):
+    """LOCAL simulation only, NOT GitHub evaluation.
+
+    fnmatchcase is used only for literal prefixes plus trailing *, and slash-free
+    tags. No **, ?, character classes or GitHub-only glob constructs are modeled.
+    Matching entries are processed in order: positive includes, !negative excludes.
+    """
+    if "/" in tag or not patterns or not any(not p.startswith("!") for p in patterns):
+        raise AssertionError("unsupported simulation input")
+    included = False
+    for pattern in patterns:
+        if not re.fullmatch(r"!?[A-Za-z0-9._-]+\*", pattern):
+            raise AssertionError("unsupported simulation glob: " + pattern)
+        negative = pattern.startswith("!")
+        if fnmatch.fnmatchcase(tag, pattern.removeprefix("!")):
+            included = not negative
+    return included
+
+
+def workflow_v2_job_predicate(workflow):
+    job = workflow.split("  build-v2:\n", 1)[1]
+    match = re.search(r"^    if: (.+)$", job, re.M)
+    return match[1].strip() if match else None
+
+
+def simulate_v2_job(predicate, event):
+    """LOCAL simulation of only the approved simple event-name equality."""
+    if predicate is None:
+        return True  # Existing unguarded job is eligible for all triggering events.
+    match = re.fullmatch(r"github\.event_name == '([a-z_]+)'", predicate)
+    if not match:
+        raise AssertionError("unsupported job predicate in local simulation")
+    return event == match[1]
+
+
 NODE_SELECTOR = r'''
 const fs=require("node:fs"), vm=require("node:vm"), assert=require("node:assert/strict");
 const input=JSON.parse(fs.readFileSync(0,"utf8"));
@@ -106,6 +158,24 @@ def release(tag="v2.0.27-android-rc1", names=None, draft=False):
 
 
 class UpgradeTests(unittest.TestCase):
+    def test_workflow_tag_push_filter_prevents_duplicate_v2_release_build(self):
+        workflow = (REPO / ".github/workflows/build.yml").read_text()
+        patterns = workflow_push_tag_patterns(workflow)
+        for tag, expected in [("v2.0.27-android-rc1", False), ("v2.0.27", False),
+                              ("v0.3.0-1.18.27-android-rc4", True), ("v1.19.0", True),
+                              ("release-2.0.27", False)]:
+            with self.subTest(local_simulation_tag=tag):
+                self.assertEqual(simulate_tag_push(patterns, tag), expected)
+        self.assertEqual(patterns, ["v*", "!v2.*"], "negative must follow legacy positive")
+
+    def test_workflow_build_v2_is_manual_dispatch_only(self):
+        workflow = (REPO / ".github/workflows/build.yml").read_text()
+        predicate = workflow_v2_job_predicate(workflow)
+        for event, expected in [("workflow_dispatch", True), ("push", False)]:
+            with self.subTest(local_simulation_event=event):
+                self.assertEqual(simulate_v2_job(predicate, event), expected)
+        self.assertEqual(predicate, "github.event_name == 'workflow_dispatch'")
+
     def select(self, releases):
         result = run(["node", "-e", NODE_SELECTOR], input=json.dumps({
             "patch": (REPO / "patches/opencode2/updater-android-channel.patch").read_text(),
