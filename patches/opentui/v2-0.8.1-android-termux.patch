@@ -3,13 +3,13 @@
 # Applies to anomalyco/opentui tag v0.8.1:
 #   git -C <opentui-v0.8.1> apply patches/opentui/v2-0.8.1-android-termux.patch
 #
-# - build.zig: Android-only bionic sysroot env paths and shims; -cflags
-#   -nostdinc keeps host glibc headers out; skip pthread/m on Android.
+# - build.zig: Android-only bionic sysroot env paths and shims; translate-c
+#   uses the bionic libc file and neutralizes glibc feature macros.
 # - clipboard/host.zig: bionic lacks pthread_tryjoin_np/peekjoin_np.
 # - miniaudio_shim.c: no ALSA/PulseAudio headers on Android; use AAudio.
 #
 diff --git a/packages/native/build.zig b/packages/native/build.zig
-index eebdf8b..1949b9c 100644
+index eebdf8b..e1c3f46 100644
 --- a/packages/native/build.zig
 +++ b/packages/native/build.zig
 @@ -452,8 +452,11 @@ fn addNativeAudioDependencies(
@@ -26,7 +26,7 @@ index eebdf8b..1949b9c 100644
          },
          else => {},
      }
-@@ -490,26 +493,55 @@ fn ghosttyVtAvailable(target: std.Build.ResolvedTarget) bool {
+@@ -490,26 +493,57 @@ fn ghosttyVtAvailable(target: std.Build.ResolvedTarget) bool {
      };
  }
  
@@ -60,7 +60,8 @@ index eebdf8b..1949b9c 100644
 +        .link_libc = bionic_inc == null,
      });
 +    if (bionic_inc) |inc| {
-+        miniaudio_translate.addCFlags(&.{ "-cflags", "-nostdinc", "--" });
++        if (b.graph.environ_map.get("ZIG_LIBC")) |libc| miniaudio_translate.addCFlags(&.{ "--libc", libc });
++        miniaudio_translate.addCFlags(&.{ "-cflags", "-nostdinc", "-D__GLIBC_USE(x)=0", "-D__GLIBC_PREREQ(x,y)=0", "--" });
 +        miniaudio_translate.addIncludePath(.{ .cwd_relative = inc });
 +    }
      miniaudio_translate.addIncludePath(b.path("src"));
@@ -78,13 +79,14 @@ index eebdf8b..1949b9c 100644
 +        .link_libc = bionic_inc == null,
      });
 +    if (bionic_inc) |inc| {
-+        yoga_translate.addCFlags(&.{ "-cflags", "-nostdinc", "--" });
++        if (b.graph.environ_map.get("ZIG_LIBC")) |libc| yoga_translate.addCFlags(&.{ "--libc", libc });
++        yoga_translate.addCFlags(&.{ "-cflags", "-nostdinc", "-D__GLIBC_USE(x)=0", "-D__GLIBC_PREREQ(x,y)=0", "--" });
 +        yoga_translate.addIncludePath(.{ .cwd_relative = inc });
 +    }
      yoga_translate.addIncludePath(yoga_dep.path(""));
      module.addImport("yoga", yoga_translate.createModule());
      addContextABIHeader(b, module, optimize, target);
-@@ -545,6 +577,8 @@ fn applyDependencies(
+@@ -545,6 +579,8 @@ fn applyDependencies(
      build_options: *std.Build.Step.Options,
  ) void {
      module.addOptions("build_options", build_options);
