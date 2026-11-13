@@ -3,13 +3,13 @@
 # Applies to anomalyco/opentui tag v0.8.1:
 #   git -C <opentui-v0.8.1> apply patches/opentui/v2-0.8.1-android-termux.patch
 #
-# - build.zig: Android-only bionic sysroot env paths/translated-header shims;
-#   skip pthread/m on Android; avoid host glibc include leakage.
+# - build.zig: Android-only bionic sysroot env paths and shims; -nostdinc
+#   keeps host glibc headers out; skip pthread/m on Android.
 # - clipboard/host.zig: bionic lacks pthread_tryjoin_np/peekjoin_np.
 # - miniaudio_shim.c: no ALSA/PulseAudio headers on Android; use AAudio.
 #
 diff --git a/packages/native/build.zig b/packages/native/build.zig
-index eebdf8b..36edc85 100644
+index eebdf8b..e59b565 100644
 --- a/packages/native/build.zig
 +++ b/packages/native/build.zig
 @@ -452,8 +452,11 @@ fn addNativeAudioDependencies(
@@ -26,7 +26,7 @@ index eebdf8b..36edc85 100644
          },
          else => {},
      }
-@@ -490,26 +493,49 @@ fn ghosttyVtAvailable(target: std.Build.ResolvedTarget) bool {
+@@ -490,26 +493,55 @@ fn ghosttyVtAvailable(target: std.Build.ResolvedTarget) bool {
      };
  }
  
@@ -59,7 +59,10 @@ index eebdf8b..36edc85 100644
          .optimize = optimize,
 +        .link_libc = bionic_inc == null,
      });
-+    if (bionic_inc) |inc| miniaudio_translate.addIncludePath(.{ .cwd_relative = inc });
++    if (bionic_inc) |inc| {
++        miniaudio_translate.addCFlags(&.{"-nostdinc"});
++        miniaudio_translate.addIncludePath(.{ .cwd_relative = inc });
++    }
      miniaudio_translate.addIncludePath(b.path("src"));
      module.addImport("miniaudio", miniaudio_translate.createModule());
  
@@ -74,11 +77,14 @@ index eebdf8b..36edc85 100644
          .optimize = optimize,
 +        .link_libc = bionic_inc == null,
      });
-+    if (bionic_inc) |inc| yoga_translate.addIncludePath(.{ .cwd_relative = inc });
++    if (bionic_inc) |inc| {
++        yoga_translate.addCFlags(&.{"-nostdinc"});
++        yoga_translate.addIncludePath(.{ .cwd_relative = inc });
++    }
      yoga_translate.addIncludePath(yoga_dep.path(""));
      module.addImport("yoga", yoga_translate.createModule());
      addContextABIHeader(b, module, optimize, target);
-@@ -545,6 +571,8 @@ fn applyDependencies(
+@@ -545,6 +577,8 @@ fn applyDependencies(
      build_options: *std.Build.Step.Options,
  ) void {
      module.addOptions("build_options", build_options);
