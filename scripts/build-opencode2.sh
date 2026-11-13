@@ -14,8 +14,8 @@
 # 3. Ensures the HOST Bun is exactly $BUN_VERSION (1.4.4) — host AND target
 #    are the same official Bun release on the v2 line
 # 4. Runs `bun install --ignore-scripts`, then the upstream build entrypoint:
-#      cd packages/cli && bun run script/build.ts \
-#        --target=opencode-linux-arm64-android --skip-web-ui
+#      cd packages/cli && OPENCODE_TARGET=linux-arm64-android \
+#        bun run script/build.ts --skip-web-ui
 # 5. Copies cli-linux-arm64-android/bin/opencode to $DIST_DIR/opencode2.bin
 #    (internal filename; the package installs it as libexec/opencode/opencode.bin)
 #
@@ -200,8 +200,7 @@ PY
 echo ">>> Building opencode binary (target opencode-linux-arm64-android)..."
 mkdir -p "$DIST_DIR"
 cd "$OPENCODE_SRC/packages/cli"
-"$HOST_BUN" run script/build.ts \
-    --target=opencode-linux-arm64-android \
+OPENCODE_TARGET=linux-arm64-android "$HOST_BUN" run script/build.ts \
     --skip-web-ui \
     --skip-install \
     --outdir="$DIST_DIR/cli"
