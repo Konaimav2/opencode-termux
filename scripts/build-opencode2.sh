@@ -11,7 +11,7 @@
 #    android-target.patch adds opencode-linux-arm64-android to build.ts
 #    (no public opencode source ships an Android target; upstream's own
 #    v1.0.x build could only have worked with the same local addition)
-# 3. Ensures the HOST Bun is exactly $BUN_VERSION (1.4.2) — host AND target
+# 3. Ensures the HOST Bun is exactly $BUN_VERSION (1.4.4) — host AND target
 #    are the same official Bun release on the v2 line
 # 4. Runs `bun install --ignore-scripts`, then the upstream build entrypoint:
 #      cd packages/cli && bun run script/build.ts \
@@ -22,7 +22,7 @@
 # Deliberately ABSENT (vs the v1 scripts/build-opencode.sh):
 #   - NO custom Bun/WebKit rebuild — the official `bun build` cross-compiles
 #     straight to opencode2-linux-arm64-android.
-#   - NO module-graph surgery (no AWS/undici stubbing; Bun 1.4.2 host and
+#   - NO module-graph surgery (no AWS/undici stubbing; Bun 1.4.4 host and
 #     target share the same module graph format).
 #   - Two source patches: Android target/optional native guards and the
 #     repo-backed Termux update check. Everything else uses the upstream build.

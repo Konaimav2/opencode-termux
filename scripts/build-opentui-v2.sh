@@ -3,15 +3,13 @@
 #
 # Usage: ./scripts/build-opentui-v2.sh
 #
-# OpenCode v2's TUI renderer (@opentui/core 0.5.17) uses a native Zig library.
+# OpenCode v2's TUI renderer (@opentui/core 0.8.1) uses a native Zig library.
 # The upstream build targets aarch64-linux (musl), which fails on Android
 # because getauxval cannot be resolved. We apply
-# patches/opentui/v2-0.5.12-android-termux.patch (bionic sysroot + pthread/m
-# guards) and build for aarch64-linux-android with Zig 0.16.0.
-# The existing 0.5.12-named patch also applies cleanly to 0.5.17; keep its
-# filename, and rebuild this version rather than reusing an older renderer.
+# patches/opentui/v2-0.8.1-android-termux.patch (bionic sysroot + pthread/m
+# guards) and build for aarch64-linux-android with Zig 0.17.0.
 #
-# Requires: Zig 0.16.0, Android NDK (see scripts/env-v2.sh).
+# Requires: Zig 0.17.0, Android NDK (see scripts/env-v2.sh).
 
 set -euo pipefail
 
@@ -41,12 +39,12 @@ fi
 
 # Apply the Android patch with a loud gate: fail unless the patch applies
 # cleanly or is already applied (same pattern as scripts/build-opencode.sh).
-OPENTUI_V2_PATCH="$REPO_ROOT/patches/opentui/v2-0.5.12-android-termux.patch"
+OPENTUI_V2_PATCH="$REPO_ROOT/patches/opentui/v2-0.8.1-android-termux.patch"
 if [ ! -f "$OPENTUI_V2_PATCH" ]; then
     echo "ERROR: $OPENTUI_V2_PATCH not found"
     exit 1
 fi
-echo ">>> Applying opentui v2 Android patch (patches/opentui/v2-0.5.12-android-termux.patch)..."
+echo ">>> Applying opentui v2 Android patch (patches/opentui/v2-0.8.1-android-termux.patch)..."
 cd "$SRC"
 if git apply --check "$OPENTUI_V2_PATCH" 2>/dev/null; then
     git apply "$OPENTUI_V2_PATCH"
@@ -55,7 +53,7 @@ elif git apply --check --reverse "$OPENTUI_V2_PATCH" 2>/dev/null; then
     echo "    Patch already applied, skipping"
 else
     echo "ERROR: opentui v2 Android patch does not apply cleanly to v${OPENTUI_VERSION}"
-    echo "       Regenerate patches/opentui/v2-0.5.12-android-termux.patch against this tag."
+    echo "       Regenerate patches/opentui/v2-0.8.1-android-termux.patch against this tag."
     exit 1
 fi
 
@@ -92,22 +90,20 @@ cat > "$BIONIC_SYSROOT_INC/__opentui/miniaudio_shimmed.h" <<'EOF'
 #define _Nonnull
 #include "../miniaudio.h"
 EOF
-cat > "$BIONIC_SYSROOT_INC/__opentui/Yoga_shimmed.h" <<'EOF'
+cat > "$BIONIC_SYSROOT_INC/__opentui/yoga_bridge_shimmed.h" <<'EOF'
 #define _Nullable
 #define _Nonnull
-#include "../yoga/yoga/Yoga.h"
+#include <stdarg.h>
+#include "../yoga-bridge.h"
 EOF
-# The shims include vendored headers by sysroot-relative path, so stage them:
-# $INC/miniaudio.h (from src/vendor) and $INC/yoga/yoga/Yoga.h (from the
-# zig-deps prepared above). Without these, translate-c fails with
-# "'../miniaudio.h' not found" (this step is missing upstream too — their
-# manual build only passed with a stale sysroot).
+# The shims include bionic-sysroot-relative paths, so stage the entry headers.
+# Yoga.h itself resolves through the yoga dependency include path.
 echo ">>> Staging vendored headers into merged sysroot..."
 cp "$SRC/packages/native/src/vendor/miniaudio/miniaudio.h" "$BIONIC_SYSROOT_INC/miniaudio.h"
-mkdir -p "$BIONIC_SYSROOT_INC/yoga"
-cp -a "$SRC/packages/native/zig-deps/yoga/yoga" "$BIONIC_SYSROOT_INC/yoga/"
+cp "$SRC/packages/native/src/yoga-bridge.h" "$BIONIC_SYSROOT_INC/yoga-bridge.h"
 [ -f "$BIONIC_SYSROOT_INC/miniaudio.h" ] || { echo "ERROR: miniaudio.h staging failed"; exit 1; }
-[ -f "$BIONIC_SYSROOT_INC/yoga/yoga/Yoga.h" ] || { echo "ERROR: Yoga.h staging failed"; exit 1; }
+[ -f "$BIONIC_SYSROOT_INC/yoga-bridge.h" ] || { echo "ERROR: yoga-bridge.h staging failed"; exit 1; }
+[ -f "$BIONIC_SYSROOT_INC/__opentui/yoga_bridge_shimmed.h" ] || { echo "ERROR: yoga shim staging failed"; exit 1; }
 
 # Zig libc config pointing at the NDK bionic sysroot (API level = $ANDROID_API,
 # our floor — NOT upstream's hardcoded 29).
@@ -123,7 +119,9 @@ EOF
 echo ">>> Building with Zig (target: aarch64-linux-android, optimize: ReleaseSafe)..."
 export ANDROID_NDK_HOME BIONIC_SYSROOT_INC ZIG_LIBC
 cd "$SRC/packages/native"
-"$ZIG_BIN" build -Dlibrary-target=aarch64-linux-android -Doptimize=ReleaseSafe
+"$ZIG_BIN" build -Dlibrary-target=aarch64-linux-android -Doptimize=ReleaseSafe \
+    -Dbionic-sysroot-inc="$BIONIC_SYSROOT_INC" \
+    -Dbionic-sysroot-lib="$NDK_SYSROOT/usr/lib/aarch64-linux-android/$ANDROID_API"
 cp "lib/aarch64-linux-android/libopentui.so" "$OPENTUI_LIB"
 
 echo ""

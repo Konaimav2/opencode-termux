@@ -1,8 +1,8 @@
 diff --git a/packages/cli/script/build.ts b/packages/cli/script/build.ts
-index f55d890..715d150 100755
+index a9ae9e6..6aa33bb 100755
 --- a/packages/cli/script/build.ts
 +++ b/packages/cli/script/build.ts
-@@ -33,10 +33,11 @@ const releaseAssets = new Map<string, Promise<Map<string, string>>>()
+@@ -40,10 +40,11 @@ const modelsSnapshot = modelsSnapshotPlugin(await bundledModelsSnapshot())
  const allTargets: {
    os: string
    arch: "arm64" | "x64"
@@ -15,14 +15,12 @@ index f55d890..715d150 100755
    { os: "linux", arch: "x64" },
    { os: "linux", arch: "x64", avx2: false },
    { os: "linux", arch: "arm64", abi: "musl" },
-@@ -108,11 +109,19 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
+@@ -156,11 +157,17 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
      },
    }
    const parcelWatcherPackage = `@parcel/watcher-${item.os}-${item.arch}${item.os === "linux" ? `-${item.abi ?? "glibc"}` : ""}`
-+  // Android has no @parcel/watcher-*-android native package and the bundler
-+  // resolves the emitted require() at build time, so emit a stub that throws
-+  // when called. The caller (watcher.ts) try/catches this into "no watcher",
-+  // the same graceful degrade as a missing binding.
++  // Android has no @parcel/watcher-*-android native package. The caller
++  // try/catches this into "no watcher" at runtime.
 +  const parcelWatcherContents =
 +    item.abi === "android"
 +      ? `export default () => { throw new Error("@parcel/watcher is not available on Android") }`
@@ -37,7 +35,7 @@ index f55d890..715d150 100755
        }))
      },
 diff --git a/packages/cli/script/opencode-pty.ts b/packages/cli/script/opencode-pty.ts
-index ae3ec30..d15afcb 100644
+index a40070c..33e9098 100644
 --- a/packages/cli/script/opencode-pty.ts
 +++ b/packages/cli/script/opencode-pty.ts
 @@ -12,7 +12,7 @@ export type OpencodePtyAsset = {
@@ -49,12 +47,11 @@ index ae3ec30..d15afcb 100644
  }
  
  const core = createRequire(path.resolve(import.meta.dirname, "../../core/package.json"))
-@@ -21,6 +21,9 @@ const pty = createRequire(core.resolve("@opencode-ai/pty/package.json"))
+@@ -21,6 +21,8 @@ const pty = createRequire(core.resolve("@opencode/pty/package.json"))
  export async function resolveOpencodePty(target: Target): Promise<OpencodePtyAsset | undefined> {
-   if (target.platform !== "darwin" && target.platform !== "linux") return undefined
+   if (target.platform !== "darwin" && target.platform !== "linux" && target.platform !== "win32") return undefined
    if (target.arch !== "arm64" && target.arch !== "x64") return undefined
-+  // Android has no prebuilt @opencode-ai/pty-*-android package: degrade
-+  // gracefully (the bundle embeds `export default undefined` instead).
++  // No prebuilt @opencode/pty-*-android package: embed undefined and degrade.
 +  if (target.libc !== undefined && target.libc !== "glibc" && target.libc !== "musl") return undefined
  
    const suffix = [target.platform, target.arch, target.platform === "linux" ? (target.libc ?? "glibc") : undefined]

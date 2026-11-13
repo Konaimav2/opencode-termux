@@ -9,8 +9,8 @@
 # 3. Deb: opencode_${OPENCODE_V2_PKGVER}_aarch64.deb (Termux deb format)
 #
 # Package version tracks the opencode V2 *source* tag (OPENCODE_V2_PKGVER,
-# default 2.0.27 — see scripts/env-v2.sh header for why NOT upstream's 1.0.1).
-# Since 2.0.27 > 1.18.27, `pacman -U` / `dpkg -i` UPGRADE a v1 install in
+# default 2.2.7 — see scripts/env-v2.sh header for why NOT upstream's 1.0.1).
+# Since 2.2.7 > 1.18.27, `pacman -U` / `dpkg -i` UPGRADE a v1 install in
 # place: bin/opencode and libexec/opencode/opencode.bin are replaced.
 # v1's lib/libopentui.so is left behind as a harmless orphan (v2 keeps its
 # renderer private under libexec/opencode/).

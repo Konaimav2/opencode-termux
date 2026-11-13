@@ -244,7 +244,7 @@ assert.equal(action("2.0.27+old","2.0.27+new","notify"),"none");
 
     def test_all_source_patches_forward_reverse(self):
         for tree, patches in [("opencode", sorted((REPO / "patches/opencode2").glob("*.patch"))),
-                              ("opentui", [REPO / "patches/opentui/v2-0.5.12-android-termux.patch"])]:
+                              ("opentui", [REPO / "patches/opentui/v2-0.8.1-android-termux.patch"])]:
             with self.subTest(tree=tree):
                 target = scratch() / tree
                 shutil.copytree(EVIDENCE / tree, target, ignore=shutil.ignore_patterns(".git"))
@@ -310,16 +310,16 @@ assert.equal(action("2.0.27+old","2.0.27+new","notify"),"none");
         self.assertLess(script.index("<<'V2_SOURCE_CHECK'"), script.index('"$HOST_BUN" install'))
         root = scratch()
         manifest = json.loads((EVIDENCE / "opencode/package.json").read_text())
-        for version, renderer, expected in [("2.0.27", "0.5.17", 0), ("2.0.19", "0.5.17", 1), ("2.0.27", "0.5.12", 1)]:
+        for version, renderer, expected in [("2.2.7", "0.8.1", 0), ("2.0.27", "0.8.1", 1), ("2.2.7", "0.5.17", 1)]:
             with self.subTest(version=version, renderer=renderer):
                 (root / "package.json").write_text(json.dumps(manifest))
                 result = run(["python3", "-", str(root), version, renderer], input=code)
                 self.assertEqual(result.returncode, expected, result.stderr)
         for name in ["@opentui/core", "@opentui/solid", "@opentui/keymap"]:
             changed = json.loads(json.dumps(manifest))
-            changed["workspaces"]["catalog"][name] = "0.5.12"
+            changed["workspaces"]["catalog"][name] = "0.5.17"
             (root / "package.json").write_text(json.dumps(changed))
-            self.assertNotEqual(run(["python3", "-", str(root), "2.0.27", "0.5.17"], input=code).returncode, 0)
+            self.assertNotEqual(run(["python3", "-", str(root), "2.2.7", "0.8.1"], input=code).returncode, 0)
 
     def test_reused_source_mismatch_stops_actual_preinstall_prefix(self):
         script = (REPO / "scripts/build-opencode2.sh").read_text()
@@ -334,8 +334,8 @@ assert.equal(action("2.0.27+old","2.0.27+new","notify"),"none");
         (root / "package.json").write_text(json.dumps(manifest))
         marker = root / "would-patch-or-install"
         result = run(["bash", "-c", prefix + '\nprintf reached > "$TEST_MARKER"'],
-                     env={**os.environ, "OPENCODE_V2_WORKTREE": str(root), "OPENCODE_V2_REF": "v2.0.27",
-                          "OPENCODE_V2_PKGVER": "2.0.27", "OPENTUI_VERSION": "0.5.17", "TEST_MARKER": str(marker)})
+                     env={**os.environ, "OPENCODE_V2_WORKTREE": str(root), "OPENCODE_V2_REF": "v2.2.7",
+                          "OPENCODE_V2_PKGVER": "2.2.7", "OPENTUI_VERSION": "0.8.1", "TEST_MARKER": str(marker)})
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("source version and OPENCODE_V2_PKGVER disagree", result.stderr)
         self.assertFalse(marker.exists())
@@ -344,13 +344,13 @@ assert.equal(action("2.0.27+old","2.0.27+new","notify"),"none");
         env = {k: v for k, v in os.environ.items() if k not in ["BUN_VERSION", "OPENTUI_VERSION", "OPENCODE_V2_REF", "OPENCODE_V2_PKGVER", "OPENCODE_CHANNEL", "ZIG_V2_VERSION", "ANDROID_API"]}
         result = run(["bash", "-c", 'source "$1" >/dev/null; printf "%s\\n" "$BUN_VERSION" "$OPENTUI_VERSION" "$OPENCODE_V2_REF" "$OPENCODE_V2_PKGVER" "$ZIG_V2_VERSION" "$ANDROID_API" "$OPENCODE_CHANNEL"', "test", str(REPO / "scripts/env-v2.sh")], env=env)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.splitlines(), ["1.4.2", "0.5.17", "v2.0.27", "2.0.27", "0.16.0", "24", "android-termux"])
+        self.assertEqual(result.stdout.splitlines(), ["1.4.4", "0.8.1", "v2.2.7", "2.2.7", "0.17.0", "24", "android-termux"])
 
     def test_workflow_version_input_and_release_tag(self):
         workflow = (REPO / ".github/workflows/build.yml").read_text()
-        self.assertIn("default: 'v2.0.27'", workflow)
+        self.assertIn("default: 'v2.2.7'", workflow)
         job = workflow.split("  build-v2:", 1)[1]
-        for pin in ['OPENTUI_VERSION: "0.5.17"', 'OPENCODE_V2_REF: "v2.0.27"', 'OPENCODE_V2_PKGVER: "2.0.27"']:
+        for pin in ['OPENTUI_VERSION: "0.8.1"', 'OPENCODE_V2_REF: "v2.2.7"', 'OPENCODE_V2_PKGVER: "2.2.7"']:
             self.assertIn(pin, job)
         block = job.split("      - name: Override OpenCode v2 ref from input\n", 1)[1].split("      - name:", 1)[0]
         self.assertIn("OPENCODE_V2_PKGVER=", block)
@@ -370,21 +370,21 @@ assert.equal(action("2.0.27+old","2.0.27+new","notify"),"none");
     def test_manual_install_docs(self):
         readme = (REPO / "README.md").read_text()
         default = readme.split("## Install (Termux)", 1)[1].split("### Legacy v1 line", 1)[0]
-        self.assertIn('/releases/download/v2.0.27-android-rc1/opencode_2.0.27_aarch64.deb', default)
+        self.assertIn('/releases/download/v2.2.7-android-rc1/opencode_2.2.7_aarch64.deb', default)
         self.assertNotIn('/releases/latest/', default)
-        self.assertIn('--ref v2.0.27-android-rc1', default)
+        self.assertIn('--ref v2.2.7-android-rc1', default)
         self.assertIn('not the recommended path for this update', default)
         self.assertIn('historical/reference use only', default)
         self.assertEqual(default.count("curl -LO "), 2, "one deb plus optional installer, no all-format downloads")
-        self.assertIn('OpenCode 2.0.27', readme[:readme.index("## Install")])
+        self.assertIn('OpenCode 2.2.7', readme[:readme.index("## Install")])
 
     def test_package_layout_and_build_contracts(self):
         package = (REPO / "scripts/make-packages-v2.sh").read_text()
         for token in ['DEB_NAME="opencode_${OPENCODE_V2_PKGVER}_aarch64.deb"', 'Package: opencode', 'Architecture: aarch64', 'libexec/opencode/libopentui.so', 'libexec/opencode/libtagfix.so', 'check_android_shared_object "$ARM64_LIBOPENTUI"', 'check_elf_aarch64 "$OPENCODE2_BINARY"']:
             self.assertIn(token, package)
         native = (REPO / "scripts/build-opentui-v2.sh").read_text()
-        self.assertIn('patches/opentui/v2-0.5.12-android-termux.patch', native)
-        self.assertIn('0.5.17', native)
+        self.assertIn('patches/opentui/v2-0.8.1-android-termux.patch', native)
+        self.assertIn('0.8.1', native)
         self.assertIn('-Dlibrary-target=aarch64-linux-android', native)
         script = (REPO / "scripts/build-opencode2.sh").read_text()
         self.assertIn('--skip-install', script)
