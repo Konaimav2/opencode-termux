@@ -3,13 +3,13 @@
 # Applies to anomalyco/opentui tag v0.8.1:
 #   git -C <opentui-v0.8.1> apply patches/opentui/v2-0.8.1-android-termux.patch
 #
-# - build.zig: Android-only bionic sysroot env paths and shims; -nostdinc
-#   keeps host glibc headers out; skip pthread/m on Android.
+# - build.zig: Android-only bionic sysroot env paths and shims; -cflags
+#   -nostdinc keeps host glibc headers out; skip pthread/m on Android.
 # - clipboard/host.zig: bionic lacks pthread_tryjoin_np/peekjoin_np.
 # - miniaudio_shim.c: no ALSA/PulseAudio headers on Android; use AAudio.
 #
 diff --git a/packages/native/build.zig b/packages/native/build.zig
-index eebdf8b..e59b565 100644
+index eebdf8b..1949b9c 100644
 --- a/packages/native/build.zig
 +++ b/packages/native/build.zig
 @@ -452,8 +452,11 @@ fn addNativeAudioDependencies(
@@ -60,7 +60,7 @@ index eebdf8b..e59b565 100644
 +        .link_libc = bionic_inc == null,
      });
 +    if (bionic_inc) |inc| {
-+        miniaudio_translate.addCFlags(&.{"-nostdinc"});
++        miniaudio_translate.addCFlags(&.{ "-cflags", "-nostdinc", "--" });
 +        miniaudio_translate.addIncludePath(.{ .cwd_relative = inc });
 +    }
      miniaudio_translate.addIncludePath(b.path("src"));
@@ -78,7 +78,7 @@ index eebdf8b..e59b565 100644
 +        .link_libc = bionic_inc == null,
      });
 +    if (bionic_inc) |inc| {
-+        yoga_translate.addCFlags(&.{"-nostdinc"});
++        yoga_translate.addCFlags(&.{ "-cflags", "-nostdinc", "--" });
 +        yoga_translate.addIncludePath(.{ .cwd_relative = inc });
 +    }
      yoga_translate.addIncludePath(yoga_dep.path(""));
