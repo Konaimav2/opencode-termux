@@ -105,6 +105,30 @@ cp "$SRC/packages/native/src/yoga-bridge.h" "$BIONIC_SYSROOT_INC/yoga-bridge.h"
 [ -f "$BIONIC_SYSROOT_INC/yoga-bridge.h" ] || { echo "ERROR: yoga-bridge.h staging failed"; exit 1; }
 [ -f "$BIONIC_SYSROOT_INC/__opentui/yoga_bridge_shimmed.h" ] || { echo "ERROR: yoga shim staging failed"; exit 1; }
 
+# Bionic limits.h reaches the compiler limits header via #include_next, which
+# resolves to host glibc in zig translate-c. Redirect that one include to a
+# copy of clang's limits.h with its own host fallback removed.
+CLANG_LIMITS="$(ls "$NDK_TOOLCHAIN"/lib/clang/*/include/limits.h 2>/dev/null | head -n1)"
+[ -f "$CLANG_LIMITS" ] || { echo "ERROR: clang limits.h not found"; exit 1; }
+python3 - "$CLANG_LIMITS" "$BIONIC_SYSROOT_INC" <<'PY_LIMITS'
+import re
+import sys
+clang = open(sys.argv[1]).read()
+clang = re.sub(
+    r"#if __STDC_HOSTED__ && __has_include_next\(<limits\.h>\)\s*\n"
+    r"#include_next <limits\.h>\s*\n#endif\s*\n?",
+    "",
+    clang,
+)
+open(sys.argv[2] + "/clang-limits.h", "w").write(clang)
+path = sys.argv[2] + "/limits.h"
+body = open(path).read()
+if "#include_next <limits.h>" not in body:
+    sys.exit("ERROR: bionic limits.h anchor missing")
+open(path, "w").write(body.replace("#include_next <limits.h>", '#include "clang-limits.h"'))
+PY_LIMITS
+[ -f "$BIONIC_SYSROOT_INC/clang-limits.h" ] || { echo "ERROR: clang limits staging failed"; exit 1; }
+
 # Zig libc config pointing at the NDK bionic sysroot (API level = $ANDROID_API,
 # our floor — NOT upstream's hardcoded 29).
 cat > "$ZIG_LIBC" <<EOF
