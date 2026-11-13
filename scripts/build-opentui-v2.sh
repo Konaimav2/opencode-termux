@@ -110,10 +110,11 @@ cp "$SRC/packages/native/src/yoga-bridge.h" "$BIONIC_SYSROOT_INC/yoga-bridge.h"
 cat > "$ZIG_LIBC" <<EOF
 include_dir=$BIONIC_SYSROOT_INC
 sys_include_dir=$BIONIC_SYSROOT_INC
+cc_dir=$NDK_SYSROOT/usr/lib/aarch64-linux-android/$ANDROID_API
 crt_dir=$NDK_SYSROOT/usr/lib/aarch64-linux-android/$ANDROID_API
 msvc_lib_dir=
 kernel32_lib_dir=
-gcc_dir=
+darwin_sdk_dir=
 EOF
 
 echo ">>> Building with Zig (target: aarch64-linux-android, optimize: ReleaseSafe)..."
