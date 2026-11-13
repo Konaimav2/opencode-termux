@@ -119,10 +119,9 @@ EOF
 
 echo ">>> Building with Zig (target: aarch64-linux-android, optimize: ReleaseSafe)..."
 export ANDROID_NDK_HOME BIONIC_SYSROOT_INC ZIG_LIBC
+export BIONIC_SYSROOT_LIB="$NDK_SYSROOT/usr/lib/aarch64-linux-android/$ANDROID_API"
 cd "$SRC/packages/native"
-"$ZIG_BIN" build -Dlibrary-target=aarch64-linux-android -Doptimize=ReleaseSafe \
-    -Dbionic-sysroot-inc="$BIONIC_SYSROOT_INC" \
-    -Dbionic-sysroot-lib="$NDK_SYSROOT/usr/lib/aarch64-linux-android/$ANDROID_API"
+"$ZIG_BIN" build -Dlibrary-target=aarch64-linux-android -Doptimize=ReleaseSafe
 cp "lib/aarch64-linux-android/libopentui.so" "$OPENTUI_LIB"
 
 echo ""

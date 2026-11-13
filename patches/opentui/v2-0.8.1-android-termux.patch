@@ -3,13 +3,13 @@
 # Applies to anomalyco/opentui tag v0.8.1:
 #   git -C <opentui-v0.8.1> apply patches/opentui/v2-0.8.1-android-termux.patch
 #
-# - build.zig: bionic sysroot options, translated-header shims, skip
+# - build.zig: bionic sysroot env paths, translated-header shims, skip
 #   pthread/m on Android (bionic libc contains both).
 # - clipboard/host.zig: bionic lacks pthread_tryjoin_np/peekjoin_np.
 # - miniaudio_shim.c: no ALSA/PulseAudio headers on Android; use AAudio.
 #
 diff --git a/packages/native/build.zig b/packages/native/build.zig
-index eebdf8b..d55f151 100644
+index eebdf8b..7e9ccf4 100644
 --- a/packages/native/build.zig
 +++ b/packages/native/build.zig
 @@ -452,8 +452,11 @@ fn addNativeAudioDependencies(
@@ -32,12 +32,12 @@ index eebdf8b..d55f151 100644
  
 +/// Merged bionic sysroot dir staged by scripts/build-opentui-v2.sh.
 +fn bionicSysrootInclude(b: *std.Build) ?[]const u8 {
-+    return b.option([]const u8, "bionic-sysroot-inc", "Merged bionic sysroot include directory (Android)");
++    return b.graph.environ_map.get("BIONIC_SYSROOT_INC");
 +}
 +
 +/// Bionic sysroot library dir for the Android target.
 +fn bionicSysrootLib(b: *std.Build) ?[]const u8 {
-+    return b.option([]const u8, "bionic-sysroot-lib", "Bionic sysroot library directory (Android)");
++    return b.graph.environ_map.get("BIONIC_SYSROOT_LIB");
 +}
 +
  fn addTranslatedCImports(
